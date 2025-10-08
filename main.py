@@ -10,17 +10,14 @@ from PyQt5.QtGui import QPixmap, QIcon, QImage
 import utils.loader as loader
 
 
-# --- MPR VIEWER CLASS ---
 class MPRViewer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MPR VIEWER")
         self.setGeometry(100, 100, 1200, 800)
 
-        # Load data using the integrated function
-        self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data("file.nii.gz")
+        self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data("utils/ct.nii.gz")
 
-        # Initialize slices to the center of each dimension
         self.slices = {
             'axial': self.dims[2] // 2,
             'coronal': self.dims[1] // 2,
@@ -28,21 +25,16 @@ class MPRViewer(QMainWindow):
             'oblique': self.dims[2] // 2
         }
 
-        # Oblique rotation defaults
         self.rot_x_deg = 0
         self.rot_y_deg = 0
-
-        # Store QLabel references
         self.view_labels = {}
 
-        # Main layout setup
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Sidebar + Viewing Area
         sidebar = self.create_sidebar()
         viewing_area = self.create_viewing_area()
 
@@ -52,7 +44,6 @@ class MPRViewer(QMainWindow):
         main_layout.setStretch(0, 0)
         main_layout.setStretch(1, 1)
 
-        # Style
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #f0f0f0;
@@ -83,36 +74,27 @@ class MPRViewer(QMainWindow):
             }
         """)
 
-        # Add icons to buttons
-        self.add_image_to_button("mode_btn_0", "Icons/windows.png")
-        self.add_image_to_button("mode_btn_1", "Icons/heart.png")
-        self.add_image_to_button("mode_btn_2", "Icons/diagram.png")
-        self.add_image_to_button("tool_btn_0_0", "icons/tool1.png")
-        self.add_image_to_button("tool_btn_0_1", "Icons/brightness.png")
-        self.add_image_to_button("tool_btn_0_2", "Icons/loupe.png")
-        self.add_image_to_button("tool_btn_1_0", "Icons/expand.png")
-        self.add_image_to_button("tool_btn_1_1", "Icons/rotating-arrow-to-the-right.png")
-        self.add_image_to_button("tool_btn_1_2", "Icons/video.png")
-        self.add_image_to_button("tool_btn_2_0", "icons/tool7.png")
-        self.add_image_to_button("tool_btn_2_1", "icons/tool8.png")
-        self.add_image_to_button("tool_btn_2_2", "icons/tool9.png")
-        self.add_image_to_button("export_btn_0", "Icons/all.png")
-        self.add_image_to_button("export_btn_1", "Icons/crop.png")
+        self.add_image_to_button("mode_btn_0", "Icons/windows.png", "3 Main Views")
+        self.add_image_to_button("mode_btn_1", "Icons/heart.png", "Segmentation View")
+        self.add_image_to_button("mode_btn_2", "Icons/diagram.png", "Oblique View")
+        self.add_image_to_button("tool_btn_0_0", "Icons/tab.png", "Slide Mode")
+        self.add_image_to_button("tool_btn_0_1", "Icons/brightness.png", "Contrast Mode")
+        self.add_image_to_button("tool_btn_0_2", "Icons/loupe.png", "Zoom Mode")
+        self.add_image_to_button("tool_btn_1_0", "Icons/expand.png", "Crop Mode")
+        self.add_image_to_button("tool_btn_1_1", "Icons/rotating-arrow-to-the-right.png", "Rotate Mode")
+        self.add_image_to_button("tool_btn_1_2", "Icons/video.png", "Cine Mode")
+        self.add_image_to_button("export_btn_0", "Icons/all.png", "Export All")
+        self.add_image_to_button("export_btn_1", "Icons/crop.png", "Crop & Export")
 
-        # Initial render
         self.update_all_views()
-
-        # Re-render when resized
         self.centralWidget().installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        """Handle resize to update images with proper scaling."""
         if obj == self.centralWidget() and event.type() == event.Resize:
             self.update_all_views()
         return super().eventFilter(obj, event)
 
     def numpy_to_qpixmap(self, array_2d: np.ndarray) -> QPixmap:
-        """Convert a 2D numpy array (uint8) to QPixmap."""
         if array_2d.dtype != np.uint8:
             array_2d = array_2d.astype(np.uint8)
 
@@ -122,7 +104,6 @@ class MPRViewer(QMainWindow):
         return QPixmap.fromImage(q_img)
 
     def update_view(self, ui_title: str, view_type: str):
-        """Update a single view (axial, sagittal, coronal, oblique)."""
         if ui_title.lower() in self.view_labels:
             slice_data = loader.get_slice_data(
                 self.data, self.dims, self.slices,
@@ -135,7 +116,6 @@ class MPRViewer(QMainWindow):
             pixmap = self.numpy_to_qpixmap(slice_data)
             label = self.view_labels[ui_title.lower()]
 
-            # ✅ Scale to label size while keeping aspect ratio
             label_size = label.size()
             scaled_pixmap = pixmap.scaled(
                 QSize(label_size.width() - 2, label_size.height() - 2),
@@ -146,14 +126,12 @@ class MPRViewer(QMainWindow):
             label.setText("")
 
     def update_all_views(self):
-        """Update all four MPR views."""
         self.update_view('frontal', 'coronal')
         self.update_view('sagittal', 'sagittal')
         self.update_view('axial', 'axial')
         self.update_view('oblique', 'oblique')
 
     def create_sidebar(self):
-        """Create the left sidebar with Mode, Tools, and Export sections."""
         sidebar = QFrame()
         sidebar.setFrameStyle(QFrame.Box)
         sidebar.setFixedWidth(200)
@@ -178,7 +156,6 @@ class MPRViewer(QMainWindow):
         sidebar_layout.setSpacing(20)
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Mode section
         mode_group = QGroupBox("Mode:")
         mode_layout = QGridLayout()
         mode_layout.setSpacing(5)
@@ -190,11 +167,10 @@ class MPRViewer(QMainWindow):
         mode_group.setLayout(mode_layout)
         sidebar_layout.addWidget(mode_group)
 
-        # Tools section
         tools_group = QGroupBox("Tools:")
         tools_layout = QGridLayout()
         tools_layout.setSpacing(5)
-        for row in range(3):
+        for row in range(2):
             for col in range(3):
                 btn = QPushButton()
                 btn.setFixedSize(40, 40)
@@ -203,7 +179,6 @@ class MPRViewer(QMainWindow):
         tools_group.setLayout(tools_layout)
         sidebar_layout.addWidget(tools_group)
 
-        # Export section
         export_group = QGroupBox("Export:")
         export_layout = QGridLayout()
         export_layout.setSpacing(5)
@@ -273,7 +248,7 @@ class MPRViewer(QMainWindow):
 
         view_area = QLabel()
         view_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        view_area.setScaledContents(False)  # ✅ DO NOT STRETCH IMAGE
+        view_area.setScaledContents(False)
         view_area.setObjectName(f"view_{title.lower()}")
         view_area.setStyleSheet("""
             QLabel {
@@ -289,8 +264,7 @@ class MPRViewer(QMainWindow):
 
         return panel
 
-    def add_image_to_button(self, button_name, image_path):
-        """Try to add icon to button; fallback to text."""
+    def add_image_to_button(self, button_name, image_path, tooltip_text=None):
         button = self.findChild(QPushButton, button_name)
         if button:
             try:
@@ -300,6 +274,9 @@ class MPRViewer(QMainWindow):
                     button.setIconSize(QSize(32, 32))
             except Exception:
                 button.setText(button_name.replace('_', ' ').title().split(' ')[0])
+
+            if tooltip_text:
+                button.setToolTip(tooltip_text)
 
 
 def main():
