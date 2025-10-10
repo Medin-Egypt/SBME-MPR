@@ -1,0 +1,6 @@
+scikit-image
+PyQt5
+pydicom
+nibabel
+numpy
+Tensorflow
