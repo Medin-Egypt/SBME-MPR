@@ -92,7 +92,8 @@ class MPRViewer(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
 
         # Load data (assuming utils/loader.py and ct.nii.gz are available)
-        self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data("utils/ct.nii.gz")
+        # self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data("file.nii.gz")
+        self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_dicom_data("full")
 
         # Slice indices for each main view type (coronal is 'frontal' UI view)
         self.slices = {
@@ -218,7 +219,7 @@ class MPRViewer(QMainWindow):
                 return
             
             slice_data = loader.get_slice_data(
-                self.data, self.dims, self.slices,
+                self.data, self.dims, self.slices, self.affine,
                 self.intensity_min, self.intensity_max,
                 rot_x_deg=self.rot_x_deg,
                 rot_y_deg=self.rot_y_deg,
