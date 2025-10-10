@@ -8,13 +8,14 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSize, QEvent
 from PyQt5.QtGui import QPixmap, QIcon, QImage
 import utils.loader as loader
+import time
 
 
 # --- Custom QLabel for Mouse Wheel Interaction ---
 class SliceViewLabel(QLabel):
     """
-    Custom QLabel that handles mouse wheel events to scroll through volume slices.
-    Relies on parent_viewer for state and update logic.
+    Custom QLabel that handles mouse wheel events to scroll through volume slices,
+    contrast adjustment, and zoom functionality.
     """
     def __init__(self, parent_viewer, view_type, ui_title):
         super().__init__()
@@ -36,50 +37,126 @@ class SliceViewLabel(QLabel):
         self.setObjectName(f"view_{self.ui_title.lower()}")
         self.setText("")
 
-        # state for contrast mode
+        # State for contrast mode
         self._dragging = False
         self._last_pos = None
         
+        # State for zoom mode
+        self.zoom_factor = 1.0
+        self.pan_offset_x = 0
+        self.pan_offset_y = 0
+        self._panning = False
+        self._pan_start = None
+        
+        # Store the original pixmap for quality preservation
+        self._original_pixmap = None
+        
+        # Prevent rapid zoom events
+        self._last_zoom_time = 0
+        self._zoom_cooldown = 100  # milliseconds
+        
     def wheelEvent(self, event):
-            slide_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_0")
-            if slide_btn and slide_btn.isChecked():
-                delta = event.angleDelta().y()
-                step = 1 if abs(delta) > 0 else 0
-                direction = step * (-1 if delta > 0 else 1)
-                if direction == 0:
-                    return
-
-                current_slice = self.parent_viewer.slices[self.view_type]
-                if self.view_type in ('axial', 'oblique'):
-                    max_dim_index = 2
-                elif self.view_type == 'coronal':
-                    max_dim_index = 1
-                elif self.view_type == 'sagittal':
-                    max_dim_index = 0
-                else:
-                    return
-
-                max_slice = self.parent_viewer.dims[max_dim_index]
-                new_slice = (current_slice + direction) % max_slice
-                self.parent_viewer.slices[self.view_type] = new_slice
-                self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
+        slide_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_0")
+        zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
+        
+        if zoom_btn and zoom_btn.isChecked():
+            # Zoom mode with cooldown to prevent rapid events
+            current_time = time.time() * 1000  # Convert to milliseconds
+            if current_time - self._last_zoom_time < self._zoom_cooldown:
+                event.accept()
+                return
+            
+            self._last_zoom_time = current_time
+            
+            delta = event.angleDelta().y()
+            
+            # Only process if there's a significant delta
+            if abs(delta) < 15:
+                event.accept()
+                return
+            
+            zoom_step = 1.15  # 15% zoom per scroll
+            
+            if delta > 0:
+                # Zoom in
+                new_zoom = self.zoom_factor * zoom_step
+                self.zoom_factor = min(new_zoom, 10.0)  # Max 10x zoom
             else:
-                super().wheelEvent(event)
+                # Zoom out
+                new_zoom = self.zoom_factor / zoom_step
+                self.zoom_factor = max(new_zoom, 1.0)  # Min 1x zoom
+                
+                # Reset pan when zooming out to 1.0
+                if self.zoom_factor == 1.0:
+                    self.pan_offset_x = 0
+                    self.pan_offset_y = 0
+            
+            # Re-render with new zoom level for quality preservation
+            self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
+            event.accept()
+            
+        elif slide_btn and slide_btn.isChecked():
+            # Slide mode
+            delta = event.angleDelta().y()
+            step = 1 if abs(delta) > 0 else 0
+            direction = step * (-1 if delta > 0 else 1)
+            if direction == 0:
+                return
+
+            current_slice = self.parent_viewer.slices[self.view_type]
+            if self.view_type in ('axial', 'oblique'):
+                max_dim_index = 2
+            elif self.view_type == 'coronal':
+                max_dim_index = 1
+            elif self.view_type == 'sagittal':
+                max_dim_index = 0
+            else:
+                return
+
+            max_slice = self.parent_viewer.dims[max_dim_index]
+            new_slice = (current_slice + direction) % max_slice
+            self.parent_viewer.slices[self.view_type] = new_slice
+            self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
     def mousePressEvent(self, event):
         contrast_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_1")
-        if contrast_btn and contrast_btn.isChecked() and event.button() == Qt.LeftButton:
+        zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
+        
+        if zoom_btn and zoom_btn.isChecked() and event.button() == Qt.LeftButton:
+            # Pan mode when zoomed
+            if self.zoom_factor > 1.0:
+                self._panning = True
+                self._pan_start = event.pos()
+        elif contrast_btn and contrast_btn.isChecked() and event.button() == Qt.LeftButton:
             self._dragging = True
             self._last_pos = event.pos()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._dragging and self._last_pos:
+        zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
+        
+        if self._panning and self._pan_start and zoom_btn and zoom_btn.isChecked():
+            # Handle panning
+            dx = event.x() - self._pan_start.x()
+            dy = event.y() - self._pan_start.y()
+            
+            self.pan_offset_x += dx
+            self.pan_offset_y += dy
+            
+            self._pan_start = event.pos()
+            
+            # Update display with new pan offset
+            self._apply_zoom_and_pan()
+            
+        elif self._dragging and self._last_pos:
+            # Handle contrast adjustment
             dx = event.x() - self._last_pos.x()
             dy = event.y() - self._last_pos.y()
 
-            # sensitivity factors
             window_change = dx * 2
             level_change = -dy * 2
 
@@ -93,26 +170,104 @@ class SliceViewLabel(QLabel):
             self.parent_viewer.intensity_max = int(new_level + new_window / 2)
 
             self._last_pos = event.pos()
-
-            # refresh
             self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if self._dragging and event.button() == Qt.LeftButton:
+        if self._panning and event.button() == Qt.LeftButton:
+            self._panning = False
+        elif self._dragging and event.button() == Qt.LeftButton:
             self._dragging = False
         else:
             super().mouseReleaseEvent(event)
+    
+    def _apply_zoom_and_pan(self):
+        """Apply zoom and pan transformation to the stored original pixmap."""
+        if self._original_pixmap is None or self._original_pixmap.isNull():
+            return
+        
+        label_size = self.size()
+        
+        # Ensure we have valid dimensions
+        if label_size.width() < 10 or label_size.height() < 10:
+            return
+        
+        # Calculate the size after zoom
+        zoomed_width = int(label_size.width() * self.zoom_factor)
+        zoomed_height = int(label_size.height() * self.zoom_factor)
+        
+        # Clamp to reasonable values
+        zoomed_width = max(10, min(zoomed_width, 50000))
+        zoomed_height = max(10, min(zoomed_height, 50000))
+        
+        # Scale the original pixmap to zoomed size with high quality
+        zoomed_pixmap = self._original_pixmap.scaled(
+            QSize(zoomed_width, zoomed_height),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        
+        if self.zoom_factor > 1.0:
+            # Calculate maximum pan offsets to keep image within reasonable bounds
+            max_offset_x = (zoomed_pixmap.width() - label_size.width()) // 2
+            max_offset_y = (zoomed_pixmap.height() - label_size.height()) // 2
+            
+            # Clamp pan offsets
+            self.pan_offset_x = max(-max_offset_x, min(max_offset_x, self.pan_offset_x))
+            self.pan_offset_y = max(-max_offset_y, min(max_offset_y, self.pan_offset_y))
+            
+            # Calculate crop rectangle
+            center_x = zoomed_pixmap.width() // 2
+            center_y = zoomed_pixmap.height() // 2
+            
+            crop_x = center_x - label_size.width() // 2 - self.pan_offset_x
+            crop_y = center_y - label_size.height() // 2 - self.pan_offset_y
+            
+            # Ensure crop coordinates are within bounds
+            crop_x = max(0, min(crop_x, zoomed_pixmap.width() - label_size.width()))
+            crop_y = max(0, min(crop_y, zoomed_pixmap.height() - label_size.height()))
+            
+            # Crop the zoomed pixmap
+            cropped = zoomed_pixmap.copy(
+                crop_x, crop_y,
+                min(label_size.width(), zoomed_pixmap.width()),
+                min(label_size.height(), zoomed_pixmap.height())
+            )
+            
+            self.setPixmap(cropped)
+        else:
+            # No zoom, display normally
+            self.setPixmap(zoomed_pixmap)
+    
+    def set_image_pixmap(self, pixmap):
+        """Store the original high-quality pixmap and apply zoom/pan."""
+        self._original_pixmap = pixmap
+        # Use QTimer to defer the zoom/pan application
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, self._apply_zoom_and_pan)
+    
+    def reset_zoom(self):
+        """Reset zoom and pan to default values."""
+        self.zoom_factor = 1.0
+        self.pan_offset_x = 0
+        self.pan_offset_y = 0
+        if self._original_pixmap:
+            self._apply_zoom_and_pan()
+
 
 class MPRViewer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MPR VIEWER")
         self.setGeometry(100, 100, 1200, 800)
+        
+        # Prevent minimum size constraints that cause geometry issues
+        self.setMinimumSize(800, 600)
+        self.setMaximumSize(16777215, 16777215)  # Qt's maximum
 
         # Load data (NIfTI by default)
-        self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data("utils/ct.nii.gz")
+        self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data("ct.nii.gz")
         # self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_dicom_data("full")
 
         # Slice indices
@@ -204,8 +359,16 @@ class MPRViewer(QMainWindow):
 
     def eventFilter(self, obj, event):
         if obj == self.centralWidget() and event.type() == QEvent.Resize:
+            # Delay the update to avoid geometry conflicts
             if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
-                self.update_visible_views()
+                # Use a timer to defer the update after resize is complete
+                if not hasattr(self, '_resize_timer'):
+                    from PyQt5.QtCore import QTimer
+                    self._resize_timer = QTimer()
+                    self._resize_timer.setSingleShot(True)
+                    self._resize_timer.timeout.connect(self.update_visible_views)
+                self._resize_timer.stop()
+                self._resize_timer.start(50)  # 50ms delay
         return super().eventFilter(obj, event)
 
     def numpy_to_qpixmap(self, array_2d: np.ndarray) -> QPixmap:
@@ -216,24 +379,56 @@ class MPRViewer(QMainWindow):
         return QPixmap.fromImage(q_img)
 
     def update_view(self, ui_title: str, view_type: str):
-        if ui_title in self.view_labels:
-            label = self.view_labels[ui_title]
-            if view_type == 'segmentation':
-                self.update_segmentation_view()
-                return
+        """Update a specific view with current slice data."""
+        if ui_title not in self.view_labels:
+            return
+            
+        label = self.view_labels[ui_title]
+        
+        # Skip update if label is not visible or has invalid size
+        if not label.isVisible() or label.width() < 10 or label.height() < 10:
+            return
+            
+        if view_type == 'segmentation':
+            self.update_segmentation_view()
+            return
 
-            slice_data = loader.get_slice_data(
-                self.data, self.dims, self.slices, self.affine,
-                self.intensity_min, self.intensity_max,
-                rot_x_deg=self.rot_x_deg, rot_y_deg=self.rot_y_deg,
-                view_type=view_type
+        # Get the slice data
+        slice_data = loader.get_slice_data(
+            self.data, self.dims, self.slices, self.affine,
+            self.intensity_min, self.intensity_max,
+            rot_x_deg=self.rot_x_deg, rot_y_deg=self.rot_y_deg,
+            view_type=view_type
+        )
+        
+        # Convert to pixmap
+        pixmap = self.numpy_to_qpixmap(slice_data)
+        
+        # Get label size
+        label_size = label.size()
+        
+        # For zoom mode, we want to scale to a larger size first to maintain quality
+        if isinstance(label, SliceViewLabel) and label.zoom_factor > 1.0:
+            # Scale to actual zoomed size for better quality
+            target_width = int(label_size.width() * label.zoom_factor)
+            target_height = int(label_size.height() * label.zoom_factor)
+            scaled = pixmap.scaled(
+                QSize(target_width, target_height),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
             )
-            pixmap = self.numpy_to_qpixmap(slice_data)
-            label_size = label.size()
+        else:
+            # Normal scaling
             scaled = pixmap.scaled(
                 QSize(label_size.width() - 2, label_size.height() - 2),
-                Qt.KeepAspectRatio, Qt.SmoothTransformation
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
             )
+        
+        # Use the new set_image_pixmap method if available (for SliceViewLabel)
+        if isinstance(label, SliceViewLabel):
+            label.set_image_pixmap(scaled)
+        else:
             label.setPixmap(scaled)
 
     def update_segmentation_view(self):
