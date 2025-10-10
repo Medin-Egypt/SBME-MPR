@@ -1,0 +1,3 @@
+axial
+frontal
+sagittal
