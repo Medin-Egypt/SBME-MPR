@@ -3,8 +3,8 @@ import numpy as np
 import pydicom  # Used for reading DICOM files
 
 # --- Configuration ---
-MODEL_PATH = '../model/model.keras'
-CLASS_NAMES_PATH = '../model/class_names.txt'
+MODEL_PATH = 'model/model.keras'
+CLASS_NAMES_PATH = 'model/class_names.txt'
 IMAGE_SIZE = (224, 224)
 
 # --- Load the saved model and class names ---
@@ -33,11 +33,8 @@ def predict_image(image_path):
 
 
 # --- Function to predict a single DICOM image ---
-def predict_dicom_image(dicom_path):
+def predict_dicom_image(pixel_array):
     """Loads a DICOM image, preprocesses it, and returns the predicted class and confidence."""
-    # 1. Read DICOM file and get the pixel data
-    ds = pydicom.dcmread(dicom_path)
-    pixel_array = ds.pixel_array
 
     # 2. Normalize pixel values to the 0-255 range
     if pixel_array.dtype != np.uint8:
@@ -70,8 +67,12 @@ def predict_dicom_image(dicom_path):
 
 
 if __name__ == '__main__':
+    MODEL_PATH = '../model/model.keras'
+    CLASS_NAMES_PATH = '../model/class_names.txt'
     try:
-        predicted_class, confidence = predict_dicom_image(r"F:\CUFE-MPR\frontal\image-00001.dcm")
+        ds = pydicom.dcmread(r"F:\CUFE-MPR\frontal\image-00001.dcm")
+        pixel_array = ds.pixel_array
+        predicted_class, confidence = predict_dicom_image(pixel_array)
         print(f"Prediction: This image is most likely a(n) {predicted_class} with {confidence:.2f}% confidence.")
     except Exception as e:
         print(f"An error occurred during prediction: {e}")
