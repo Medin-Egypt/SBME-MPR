@@ -304,7 +304,7 @@ class SliceViewLabel(QLabel):
     def _apply_zoom_and_pan(self):
         if self._original_pixmap is None or self._original_pixmap.isNull():
             return
-        label_size = self.size()
+        label_size = self.contentsRect().size()
         if label_size.width() < 10 or label_size.height() < 10:
             return
         zoomed_width = int(label_size.width() * self.zoom_factor)
@@ -488,21 +488,40 @@ class MPRViewer(QMainWindow):
         self.slices['oblique'] = self.dims[2] // 2
 
     def set_slice_from_crosshair(self, source_view, norm_x, norm_y):
+        """
+        Updates slice indices based on the normalized crosshair position from a source view.
+        The stored norm_coords now directly reflect the mouse position, while the
+        slice calculation internally inverts the y-axis where needed.
+        """
         if not self.file_loaded or self.dims is None: return
 
+        # Ensure coordinates are within bounds [0, 1]
+        norm_x = max(0.0, min(1.0, norm_x))
+        norm_y = max(0.0, min(1.0, norm_y))
+
         if source_view == 'axial':
-            self.norm_coords['S'], self.norm_coords['C'] = norm_x, norm_y
-            self.slices['coronal'] = int(norm_y * self.dims[1]) % self.dims[1]
-            self.slices['sagittal'] = int(norm_x * self.dims[0]) % self.dims[0]
+            # Store direct coordinates
+            self.norm_coords['S'] = norm_x
+            self.norm_coords['C'] = norm_y
+            # Calculate slices
+            self.slices['coronal'] = int(norm_y * (self.dims[1] - 1))
+            self.slices['sagittal'] = int(norm_x * (self.dims[0] - 1))
+
         elif source_view == 'coronal':
-            self.norm_coords['S'], self.norm_coords['A'] = norm_x, norm_y
-            self.slices['axial'] = int(norm_y * self.dims[2]) % self.dims[2]
-            self.slices['sagittal'] = int(norm_x * self.dims[0]) % self.dims[0]
+            # Store direct coordinates
+            self.norm_coords['S'] = norm_x
+            self.norm_coords['A'] = norm_y
+            # FIX: Use the inverted y-coordinate ONLY for the slice calculation
+            self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
+            self.slices['sagittal'] = int(norm_x * (self.dims[0] - 1))
+
         elif source_view == 'sagittal':
-            self.norm_coords['C'], self.norm_coords['A'] = norm_x, norm_y
-            self.slices['axial'] = int(norm_y * self.dims[2]) % self.dims[2]
-            self.slices['coronal'] = int(norm_x * self.dims[1]) % self.dims[1]
-            
+            # Store direct coordinates
+            self.norm_coords['C'] = norm_x
+            self.norm_coords['A'] = norm_y
+            # FIX: Use the inverted y-coordinate ONLY for the slice calculation
+            self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
+            self.slices['coronal'] = int(norm_x * (self.dims[1] - 1))
         self.update_all_views()
 
     def update_all_views(self):
