@@ -276,7 +276,10 @@ class SliceViewLabel(QLabel):
         """Apply zoom and pan transformation to the stored original pixmap."""
         if self._original_pixmap is None or self._original_pixmap.isNull():
             return
-        label_size = self.size()
+        
+        label_size = self.contentsRect().size()
+
+        # Ensure we have valid dimensions
         if label_size.width() < 10 or label_size.height() < 10:
             return
         zoomed_width = int(label_size.width() * self.zoom_factor)
