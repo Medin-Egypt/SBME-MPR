@@ -312,31 +312,20 @@ class MPRViewer(QMainWindow):
         self.setMinimumSize(800, 600)
         self.setMaximumSize(16777215, 16777215)  # Qt's maximum
 
-        # Load data based on provided file path or prompt user
-        if file_path is None:
-            file_path = self.prompt_file_selection()
-            if file_path is None:
-                # User cancelled, exit application
-                QMessageBox.warning(self, "No File Selected", "No file was selected. Application will exit.")
-                sys.exit(0)
-        
-        # Load the selected file
-        try:
-            if file_path.lower().endswith('.nii.gz') or file_path.lower().endswith('.nii'):
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data(file_path)
-            else:
-                # Assume it's a DICOM directory
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_dicom_data(file_path)
-        except Exception as e:
-            QMessageBox.critical(self, "Error Loading File", f"Failed to load file:\n{str(e)}")
-            sys.exit(1)
+        # Initialize data variables to None
+        self.data = None
+        self.affine = None
+        self.dims = None
+        self.intensity_min = 0
+        self.intensity_max = 255
+        self.file_loaded = False
 
         # Slice indices
         self.slices = {
-            'axial': self.dims[2] // 2,
-            'coronal': self.dims[1] // 2,
-            'sagittal': self.dims[0] // 2,
-            'oblique': self.dims[2] // 2
+            'axial': 0,
+            'coronal': 0,
+            'sagittal': 0,
+            'oblique': 0
         }
 
         self.rot_x_deg = 0
@@ -413,7 +402,9 @@ class MPRViewer(QMainWindow):
         main_views_btn = self.findChild(QPushButton, "mode_btn_0")
         if main_views_btn:
             main_views_btn.setChecked(True)
-        self.show_main_views_initially()
+        
+        # Don't show views initially until file is loaded
+        # self.show_main_views_initially()
 
         # Redraw on resize
         self.centralWidget().installEventFilter(self)
@@ -423,23 +414,63 @@ class MPRViewer(QMainWindow):
         if cine_btn:
             cine_btn.clicked.connect(self.handle_cine_button_toggle)
     
-    def prompt_file_selection(self):
-        """Prompt user to select a NIfTI or DICOM file/folder."""
-        # Create file dialog
-        file_dialog = QFileDialog(self)
-        file_dialog.setWindowTitle("Select Medical Image File")
-        file_dialog.setFileMode(QFileDialog.ExistingFile)
+    def open_nifti_file(self):
+        """Open a NIfTI file dialog and load the selected file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open NIfTI File",
+            "",
+            "NIfTI Files (*.nii *.nii.gz);;All Files (*)"
+        )
         
-        # Set file filters for NIfTI files
-        file_dialog.setNameFilter("NIfTI Files (*.nii *.nii.gz);;All Files (*)")
+        if file_path:
+            try:
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data(file_path)
+                self.file_loaded = True
+                
+                # Reset slices to middle
+                self.slices = {
+                    'axial': self.dims[2] // 2,
+                    'coronal': self.dims[1] // 2,
+                    'sagittal': self.dims[0] // 2,
+                    'oblique': self.dims[2] // 2
+                }
+                
+                # Update all visible views
+                self.show_main_views_initially()
+                QMessageBox.information(self, "Success", f"NIfTI file loaded successfully!\nDimensions: {self.dims}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load NIfTI file:\n{str(e)}")
+    
+    def open_dicom_folder(self):
+        """Open a folder dialog and load DICOM files from the selected folder."""
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select DICOM Folder",
+            "",
+            QFileDialog.ShowDirsOnly
+        )
         
-        # Show dialog and get result
-        if file_dialog.exec_() == QFileDialog.Accepted:
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                return selected_files[0]
-        
-        return None
+        if folder_path:
+            try:
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_dicom_data(folder_path)
+                self.file_loaded = True
+                
+                # Reset slices to middle
+                self.slices = {
+                    'axial': self.dims[2] // 2,
+                    'coronal': self.dims[1] // 2,
+                    'sagittal': self.dims[0] // 2,
+                    'oblique': self.dims[2] // 2
+                }
+                
+                # Update all visible views
+                self.show_main_views_initially()
+                QMessageBox.information(self, "Success", f"DICOM folder loaded successfully!\nDimensions: {self.dims}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
 
     def handle_cine_button_toggle(self, checked):
         """Handle cine button toggle - stop all cine playback when unchecked."""
@@ -478,6 +509,10 @@ class MPRViewer(QMainWindow):
         
         # Skip update if label is not visible or has invalid size
         if not label.isVisible() or label.width() < 10 or label.height() < 10:
+            return
+        
+        # If no file is loaded, keep views black
+        if not self.file_loaded or self.data is None:
             return
             
         if view_type == 'segmentation':
@@ -612,11 +647,45 @@ class MPRViewer(QMainWindow):
                 background-color: #ffe0e0; border: 3px solid #cc0000;
             }
             QPushButton[objectName^="export_btn_"]:pressed { background-color: #ffc0c0; }
+            QPushButton[objectName^="open_btn_"] {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                border: 2px solid #45a049;
+            }
+            QPushButton[objectName^="open_btn_"]:hover {
+                background-color: #45a049;
+                border: 2px solid #3d8b40;
+            }
+            QPushButton[objectName^="open_btn_"]:pressed {
+                background-color: #3d8b40;
+            }
         """)
 
         layout = QVBoxLayout(sidebar)
         layout.setSpacing(20)
         layout.setContentsMargins(10, 10, 10, 10)
+        
+        # File Loading group
+        file_group = QGroupBox("Load File:")
+        file_layout = QVBoxLayout()
+        
+        # Open NIfTI button
+        open_nifti_btn = QPushButton("Open NIfTI File")
+        open_nifti_btn.setObjectName("open_btn_nifti")
+        open_nifti_btn.setMinimumHeight(35)
+        open_nifti_btn.clicked.connect(self.open_nifti_file)
+        file_layout.addWidget(open_nifti_btn)
+        
+        # Open DICOM button
+        open_dicom_btn = QPushButton("Open DICOM Folder")
+        open_dicom_btn.setObjectName("open_btn_dicom")
+        open_dicom_btn.setMinimumHeight(35)
+        open_dicom_btn.clicked.connect(self.open_dicom_folder)
+        file_layout.addWidget(open_dicom_btn)
+        
+        file_group.setLayout(file_layout)
+        layout.addWidget(file_group)
 
         # Mode group
         mode_group = QGroupBox("Mode:")
