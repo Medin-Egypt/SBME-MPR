@@ -237,7 +237,7 @@ class SliceViewLabel(QLabel):
         if self._original_pixmap is None or self._original_pixmap.isNull():
             return
         
-        label_size = self.size()
+        label_size = self.contentsRect().size()
 
         # Ensure we have valid dimensions
         if label_size.width() < 10 or label_size.height() < 10:
