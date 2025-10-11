@@ -200,7 +200,9 @@ class SliceViewLabel(QLabel):
             self.parent_viewer.intensity_min = int(new_level - new_window / 2)
             self.parent_viewer.intensity_max = int(new_level + new_window / 2)
             self._last_pos = event.pos()
-            self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
+            
+            self.parent_viewer.update_all_views()
+            
         else:
             super().mouseMoveEvent(event)
 
@@ -215,11 +217,6 @@ class SliceViewLabel(QLabel):
             super().mouseReleaseEvent(event)
     
     def _update_crosshair(self, pos):
-        """
-        Updates crosshair position based on mouse position (pos)
-        and translates it into normalized (0.0 to 1.0) coordinates based on
-        the current zoom and pan state.
-        """
         if self._original_pixmap is None or self._original_pixmap.isNull():
             return
             
@@ -249,14 +246,12 @@ class SliceViewLabel(QLabel):
         self.update()
 
     def set_normalized_crosshair(self, norm_x, norm_y):
-        """Sets the crosshair based on normalized coordinates (0.0 to 1.0)."""
         self.normalized_crosshair_x = norm_x
         self.normalized_crosshair_y = norm_y
         self.update()
 
     def paintEvent(self, event):
-        """Overrides paintEvent to draw the image, colored crosshairs, and center circle."""
-        super().paintEvent(event) # Draws the image first
+        super().paintEvent(event)
         
         if self.parent_viewer.file_loaded and self._original_pixmap and not self._original_pixmap.isNull():
             painter = QPainter(self)
@@ -273,40 +268,33 @@ class SliceViewLabel(QLabel):
             draw_x = int( (self.normalized_crosshair_x * zoomed_width) + center_offset_x - self.pan_offset_x )
             draw_y = int( (self.normalized_crosshair_y * zoomed_height) + center_offset_y - self.pan_offset_y )
 
-            # --- NEW: Color logic for crosshair lines ---
             colors = self.parent_viewer.view_colors
             h_color, v_color = None, None
 
             if self.view_type == 'axial':
-                # Horizontal line is Coronal plane, Vertical line is Sagittal plane
                 h_color = colors['coronal']
                 v_color = colors['sagittal']
             elif self.view_type == 'coronal':
-                # Horizontal line is Axial plane, Vertical line is Sagittal plane
                 h_color = colors['axial']
                 v_color = colors['sagittal']
             elif self.view_type == 'sagittal':
-                # Horizontal line is Axial plane, Vertical line is Coronal plane
                 h_color = colors['axial']
                 v_color = colors['coronal']
             
-            # Draw Horizontal Line
             if h_color:
                 pen_h = QPen(h_color)
                 pen_h.setWidth(1)
                 painter.setPen(pen_h)
                 painter.drawLine(0, draw_y, self.width(), draw_y)
 
-            # Draw Vertical Line
             if v_color:
                 pen_v = QPen(v_color)
                 pen_v.setWidth(1)
                 painter.setPen(pen_v)
                 painter.drawLine(draw_x, 0, draw_x, self.height())
             
-            # Draw a small yellow circle at the intersection
             if 0 <= draw_x <= self.width() and 0 <= draw_y <= self.height():
-                intersect_pen = QPen(QColor(255, 255, 0)) # Bright yellow
+                intersect_pen = QPen(QColor(255, 255, 0))
                 intersect_pen.setWidth(2)
                 painter.setPen(intersect_pen)
                 painter.drawEllipse(draw_x - 4, draw_y - 4, 8, 8)
@@ -314,7 +302,6 @@ class SliceViewLabel(QLabel):
             painter.end()
 
     def _apply_zoom_and_pan(self):
-        """Apply zoom and pan transformation to the stored original pixmap."""
         if self._original_pixmap is None or self._original_pixmap.isNull():
             return
         label_size = self.size()
@@ -354,12 +341,10 @@ class SliceViewLabel(QLabel):
         self.update()
 
     def set_image_pixmap(self, pixmap):
-        """Store the original high-quality pixmap and apply zoom/pan."""
         self._original_pixmap = pixmap
         self._apply_zoom_and_pan()
     
     def reset_zoom(self):
-        """Reset zoom and pan to default values."""
         self.zoom_factor = 1.0
         self.pan_offset_x = 0
         self.pan_offset_y = 0
@@ -376,7 +361,6 @@ class MPRViewer(QMainWindow):
         self.setMinimumSize(800, 600)
         self.setMaximumSize(16777215, 16777215)
         
-        # --- NEW: Define view colors ---
         self.view_colors = {
             'axial': QColor(100, 220, 100),    # Green
             'coronal': QColor(100, 150, 255), # Blue
@@ -390,14 +374,14 @@ class MPRViewer(QMainWindow):
         self.intensity_max = 255
         self.file_loaded = False
         
-        # Coordinates for crosshair position (normalized: 0.0 to 1.0)
+        # --- NEW: Store original contrast values ---
+        self.original_intensity_min = 0
+        self.original_intensity_max = 255
+        
         self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
 
         self.slices = {
-            'axial': 0,
-            'coronal': 0,
-            'sagittal': 0,
-            'oblique': 0
+            'axial': 0, 'coronal': 0, 'sagittal': 0, 'oblique': 0
         }
 
         self.rot_x_deg = 0
@@ -430,16 +414,21 @@ class MPRViewer(QMainWindow):
         self.add_image_to_button("mode_btn_2", "Icons/diagram.png", "Oblique View")
         self.add_image_to_button("tool_btn_0_0", "Icons/tab.png", "Slide/Crosshair Mode")
         self.add_image_to_button("tool_btn_0_1", "Icons/brightness.png", "Contrast Mode")
-        self.add_image_to_button("tool_btn_0_2", "Icons/loupe.png", "Zoom Mode")
+        self.add_image_to_button("tool_btn_0_2", "Icons/loupe.png", "Zoom/Pan Mode")
         self.add_image_to_button("tool_btn_1_0", "Icons/expand.png", "Crop Mode")
         self.add_image_to_button("tool_btn_1_1", "Icons/rotating-arrow-to-the-right.png", "Rotate Mode")
-        self.add_image_to_button("tool_btn_1_2", "Icons/video.png", "Cine Mode (Click view to start/stop)")
+        self.add_image_to_button("tool_btn_1_2", "Icons/video.png", "Cine Mode")
         self.add_image_to_button("export_btn_0", "Icons/NII.png", "NIFTI Export")
         self.add_image_to_button("export_btn_1", "Icons/DIC.png", "DICOM Export")
 
         main_views_btn = self.findChild(QPushButton, "mode_btn_0")
         if main_views_btn:
             main_views_btn.setChecked(True)
+        
+        # Set a default tool
+        default_tool = self.findChild(QPushButton, "tool_btn_0_0")
+        if default_tool:
+            default_tool.setChecked(True)
         
         self.centralWidget().installEventFilter(self)
         
@@ -449,42 +438,78 @@ class MPRViewer(QMainWindow):
             
         self.show_main_views_initially()
 
-    def set_slice_from_crosshair(self, source_view, norm_x, norm_y):
-        """
-        Updates the slice indices and crosshair positions across all views
-        based on a click/drag in the source_view.
-        """
-        if not self.file_loaded or self.dims is None:
+    # --- NEW: Reset logic methods ---
+    
+    def on_reset_clicked(self):
+        """Handler for the Reset button. Resets the currently active tool."""
+        if not self.file_loaded:
             return
 
+        checked_btn = self.tools_group_buttons.checkedButton()
+        if not checked_btn:
+            return
+
+        btn_name = checked_btn.objectName()
+
+        if btn_name == "tool_btn_0_0":  # Crosshair/Slice
+            self.reset_crosshair_and_slices()
+        elif btn_name == "tool_btn_0_1":  # Contrast
+            self.reset_contrast()
+        elif btn_name == "tool_btn_0_2":  # Zoom/Pan
+            self.reset_all_zooms()
+        elif btn_name == "tool_btn_1_1":  # Rotate
+            self.reset_rotation()
+        
+        # After resetting parameters, update all views to show the changes
+        self.update_all_views()
+
+    def reset_all_zooms(self):
+        """Iterates through all view labels and resets their zoom/pan."""
+        for label in self.view_labels.values():
+            if isinstance(label, SliceViewLabel):
+                label.reset_zoom()
+
+    def reset_contrast(self):
+        """Resets the window/level to the initial values from file load."""
+        self.intensity_min = self.original_intensity_min
+        self.intensity_max = self.original_intensity_max
+
+    def reset_rotation(self):
+        """Resets the oblique rotation angles to zero."""
+        self.rot_x_deg = 0
+        self.rot_y_deg = 0
+
+    def reset_crosshair_and_slices(self):
+        """Resets crosshairs to the center and slices to the middle."""
+        self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
+        self.slices['axial'] = self.dims[2] // 2
+        self.slices['coronal'] = self.dims[1] // 2
+        self.slices['sagittal'] = self.dims[0] // 2
+        self.slices['oblique'] = self.dims[2] // 2
+
+    def set_slice_from_crosshair(self, source_view, norm_x, norm_y):
+        if not self.file_loaded or self.dims is None: return
+
         if source_view == 'axial':
-            self.norm_coords['S'] = norm_x
-            self.norm_coords['C'] = norm_y
+            self.norm_coords['S'], self.norm_coords['C'] = norm_x, norm_y
             self.slices['coronal'] = int(norm_y * self.dims[1]) % self.dims[1]
             self.slices['sagittal'] = int(norm_x * self.dims[0]) % self.dims[0]
-
         elif source_view == 'coronal':
-            self.norm_coords['S'] = norm_x
-            self.norm_coords['A'] = norm_y
+            self.norm_coords['S'], self.norm_coords['A'] = norm_x, norm_y
             self.slices['axial'] = int(norm_y * self.dims[2]) % self.dims[2]
             self.slices['sagittal'] = int(norm_x * self.dims[0]) % self.dims[0]
-
         elif source_view == 'sagittal':
-            self.norm_coords['C'] = norm_x
-            self.norm_coords['A'] = norm_y
+            self.norm_coords['C'], self.norm_coords['A'] = norm_x, norm_y
             self.slices['axial'] = int(norm_y * self.dims[2]) % self.dims[2]
             self.slices['coronal'] = int(norm_x * self.dims[1]) % self.dims[1]
             
         self.update_all_views()
 
     def update_all_views(self):
-        """Forces all visible views to redraw their image and sync their crosshairs."""
         views_to_update = []
-        if self.main_views_enabled:
+        if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
             views_to_update.extend([
-                ('frontal', 'coronal'), 
-                ('sagittal', 'sagittal'), 
-                ('axial', 'axial')
+                ('frontal', 'coronal'), ('sagittal', 'sagittal'), ('axial', 'axial')
             ])
         if self.oblique_view_enabled:
             views_to_update.append(('oblique', 'oblique'))
@@ -495,25 +520,19 @@ class MPRViewer(QMainWindow):
             self.update_view(ui_title, view_type, sync_crosshair=True)
 
     def open_nifti_file(self):
-        """Open a NIfTI file dialog and load the selected file."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open NIfTI File",
-            "",
-            "NIfTI Files (*.nii *.nii.gz);;All Files (*)"
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open NIfTI File", "", "NIfTI Files (*.nii *.nii.gz);;All Files (*)")
         if file_path:
             try:
                 self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data(file_path)
                 self.file_loaded = True
                 
-                self.slices = {
-                    'axial': self.dims[2] // 2,
-                    'coronal': self.dims[1] // 2,
-                    'sagittal': self.dims[0] // 2,
-                    'oblique': self.dims[2] // 2
-                }
-                self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
+                # --- NEW: Store original contrast values on load ---
+                self.original_intensity_min = self.intensity_min
+                self.original_intensity_max = self.intensity_max
+
+                self.reset_crosshair_and_slices() # Use reset function to initialize
+                self.reset_all_zooms()
+                self.reset_rotation()
                 
                 self.show_main_views_initially()
                 self.update_all_views()
@@ -522,25 +541,19 @@ class MPRViewer(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to load NIfTI file:\n{str(e)}")
 
     def open_dicom_folder(self):
-        """Open a folder dialog and load DICOM files from the selected folder."""
-        folder_path = QFileDialog.getExistingDirectory(
-            self,
-            "Select DICOM Folder",
-            "",
-            QFileDialog.ShowDirsOnly
-        )
+        folder_path = QFileDialog.getExistingDirectory(self, "Select DICOM Folder", "", QFileDialog.ShowDirsOnly)
         if folder_path:
             try:
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, organ_data = loader.load_dicom_data(
-                    folder_path)
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, organ_data = loader.load_dicom_data(folder_path)
                 self.file_loaded = True
-                self.slices = {
-                    'axial': self.dims[2] // 2,
-                    'coronal': self.dims[1] // 2,
-                    'sagittal': self.dims[0] // 2,
-                    'oblique': self.dims[2] // 2
-                }
-                self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
+                
+                # --- NEW: Store original contrast values on load ---
+                self.original_intensity_min = self.intensity_min
+                self.original_intensity_max = self.intensity_max
+
+                self.reset_crosshair_and_slices() # Use reset function to initialize
+                self.reset_all_zooms()
+                self.reset_rotation()
                 
                 middle_slice_data = self.data[:, :, self.slices['axial']]
                 orientation, confidence = od.predict_dicom_image(middle_slice_data)
@@ -550,15 +563,13 @@ class MPRViewer(QMainWindow):
                 self.update_all_views()
                 
                 QMessageBox.information(
-                    self,
-                    "Success",
+                    self, "Success",
                     f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{"\n".join(organ_data)}"
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
 
     def handle_cine_button_toggle(self, checked):
-        """Handle cine button toggle - stop all cine playback when unchecked."""
         if not checked:
             for label in self.view_labels.values():
                 if isinstance(label, SliceViewLabel):
@@ -583,17 +594,15 @@ class MPRViewer(QMainWindow):
         return QPixmap.fromImage(q_img)
 
     def update_view(self, ui_title: str, view_type: str, sync_crosshair=False):
-        """Update a specific view with current slice data."""
-        if ui_title not in self.view_labels:
-            return
+        if ui_title not in self.view_labels: return
         label = self.view_labels[ui_title]
-        if not label.isVisible() or label.width() < 10 or label.height() < 10:
-            return
-        if not self.file_loaded or self.data is None:
-            return
+        if not label.isVisible() or label.width() < 10 or label.height() < 10: return
+        if not self.file_loaded or self.data is None: return
+
         if view_type == 'segmentation':
             self.update_segmentation_view()
             return
+            
         slice_data = loader.get_slice_data(
             self.data, self.dims, self.slices, self.affine,
             self.intensity_min, self.intensity_max,
@@ -601,40 +610,26 @@ class MPRViewer(QMainWindow):
             view_type=view_type
         )
         pixmap = self.numpy_to_qpixmap(slice_data)
-        label_size = label.size()
-        if isinstance(label, SliceViewLabel) and label.zoom_factor > 1.0:
-            target_width = int(label_size.width() * label.zoom_factor)
-            target_height = int(label_size.height() * label.zoom_factor)
-            scaled = pixmap.scaled(
-                QSize(target_width, target_height),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-        else:
-            scaled = pixmap.scaled(
-                QSize(label_size.width() - 2, label_size.height() - 2),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
+        
         if isinstance(label, SliceViewLabel):
-            label.set_image_pixmap(scaled)
+            label.set_image_pixmap(pixmap)
             
             if sync_crosshair:
                 if view_type == 'axial':
-                    norm_x = self.norm_coords['S']
-                    norm_y = self.norm_coords['C']
+                    norm_x, norm_y = self.norm_coords['S'], self.norm_coords['C']
                 elif view_type == 'coronal':
-                    norm_x = self.norm_coords['S']
-                    norm_y = self.norm_coords['A']
+                    norm_x, norm_y = self.norm_coords['S'], self.norm_coords['A']
                 elif view_type == 'sagittal':
-                    norm_x = self.norm_coords['C']
-                    norm_y = self.norm_coords['A']
+                    norm_x, norm_y = self.norm_coords['C'], self.norm_coords['A']
                 else:
                     norm_x, norm_y = 0.5, 0.5
                 
                 label.set_normalized_crosshair(norm_x, norm_y)
-
         else:
+            scaled = pixmap.scaled(
+                QSize(label.size().width() - 2, label.size().height() - 2),
+                Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
             label.setPixmap(scaled)
 
     def update_segmentation_view(self):
@@ -646,14 +641,11 @@ class MPRViewer(QMainWindow):
         visible_views = [name for name, panel in self.view_panels.items() if panel.isVisible()]
         for view_name in visible_views:
             view_type = view_name
-            if view_name == 'frontal':
-                view_type = 'coronal'
+            if view_name == 'frontal': view_type = 'coronal'
             self.update_view(view_name, view_type, sync_crosshair=True)
             
     def maximize_view(self, view_name):
-        """Hides all other views, keeping only the selected one visible."""
-        if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled):
-            return
+        if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled): return
 
         self.maximized_view = view_name
         
@@ -670,19 +662,15 @@ class MPRViewer(QMainWindow):
         self.update_visible_views()
         
     def restore_views(self):
-        """Restores the original 4-view layout."""
-        if self.maximized_view is None:
-            return
+        if self.maximized_view is None: return
             
         max_panel = self.view_panels[self.maximized_view]
         self.viewing_grid.removeWidget(max_panel)
         self.maximized_view = None
         
         panels = [
-            ("Frontal", 'coronal', 0, 0),
-            ("Sagittal", 'sagittal', 0, 1),
-            ("Axial", 'axial', 1, 0),
-            ("Oblique", 'oblique', 1, 1),
+            ("Frontal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
+            ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
             ("Segmentation", 'segmentation', 1, 1)
         ]
         
@@ -702,7 +690,6 @@ class MPRViewer(QMainWindow):
         self.update_visible_views()
 
     def show_main_views_initially(self):
-        """Sets the initial state: 3 main views visible, 4th panel empty/hidden."""
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
@@ -722,10 +709,8 @@ class MPRViewer(QMainWindow):
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
         
-        obl_btn = self.findChild(QPushButton, "mode_btn_2")
-        seg_btn = self.findChild(QPushButton, "mode_btn_1")
-        if obl_btn: obl_btn.setChecked(False)
-        if seg_btn: seg_btn.setChecked(False)
+        self.findChild(QPushButton, "mode_btn_2").setChecked(False)
+        self.findChild(QPushButton, "mode_btn_1").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['frontal', 'sagittal', 'axial']:
@@ -746,16 +731,12 @@ class MPRViewer(QMainWindow):
         self.main_views_enabled = False
         self.segmentation_view_enabled = False
         
-        main_btn = self.findChild(QPushButton, "mode_btn_0")
-        seg_btn = self.findChild(QPushButton, "mode_btn_1")
-        if main_btn: main_btn.setChecked(False)
-        if seg_btn: seg_btn.setChecked(False)
+        self.findChild(QPushButton, "mode_btn_0").setChecked(False)
+        self.findChild(QPushButton, "mode_btn_1").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['frontal', 'sagittal', 'axial', 'oblique']:
                 panel.show()
-                if view_name == 'oblique':
-                    self.update_view(view_name, view_name)
             else:
                 panel.hide()
         
@@ -772,16 +753,12 @@ class MPRViewer(QMainWindow):
         self.main_views_enabled = False
         self.oblique_view_enabled = False
         
-        main_btn = self.findChild(QPushButton, "mode_btn_0")
-        obl_btn = self.findChild(QPushButton, "mode_btn_2")
-        if main_btn: main_btn.setChecked(False)
-        if obl_btn: obl_btn.setChecked(False)
+        self.findChild(QPushButton, "mode_btn_0").setChecked(False)
+        self.findChild(QPushButton, "mode_btn_2").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['frontal', 'sagittal', 'axial', 'segmentation']:
                 panel.show()
-                if view_name == 'segmentation':
-                    self.update_segmentation_view()
             else:
                 panel.hide()
                 
@@ -833,7 +810,11 @@ class MPRViewer(QMainWindow):
         layout.addWidget(mode_group)
 
         tools_group = QGroupBox("Tools:")
-        tools_layout = QGridLayout()
+        # --- NEW: Use a QVBoxLayout to hold the grid and the reset button ---
+        tools_main_layout = QVBoxLayout() 
+        tools_grid_widget = QWidget()
+        tools_layout = QGridLayout(tools_grid_widget)
+        
         self.tools_group_buttons = QButtonGroup(self)
         self.tools_group_buttons.setExclusive(True)
         for r in range(2):
@@ -844,7 +825,16 @@ class MPRViewer(QMainWindow):
                 btn.setCheckable(True)
                 tools_layout.addWidget(btn, r, c)
                 self.tools_group_buttons.addButton(btn, r * 3 + c)
-        tools_group.setLayout(tools_layout)
+        
+        tools_main_layout.addWidget(tools_grid_widget)
+
+        # --- NEW: Add the Reset button ---
+        reset_btn = QPushButton("Reset")
+        reset_btn.setMinimumHeight(35)
+        reset_btn.clicked.connect(self.on_reset_clicked)
+        tools_main_layout.addWidget(reset_btn)
+
+        tools_group.setLayout(tools_main_layout)
         layout.addWidget(tools_group)
 
         export_group = QGroupBox("Export:")
@@ -877,10 +867,8 @@ class MPRViewer(QMainWindow):
         self.viewing_grid.setContentsMargins(0, 0, 0, 0)
         
         panels = [
-            ("Frontal", 'coronal', 0, 0),
-            ("Sagittal", 'sagittal', 0, 1),
-            ("Axial", 'axial', 1, 0),
-            ("Oblique", 'oblique', 1, 1),
+            ("Frontal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
+            ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
             ("Segmentation", 'segmentation', 1, 1)
         ]
 
@@ -892,7 +880,6 @@ class MPRViewer(QMainWindow):
             panel_layout.setContentsMargins(5, 5, 5, 5)
             panel_layout.setSpacing(5)
 
-            # --- NEW: Title bar with color indicator ---
             title_bar_widget = QWidget()
             title_bar_layout = QHBoxLayout(title_bar_widget)
             title_bar_layout.setContentsMargins(0, 0, 0, 0)
