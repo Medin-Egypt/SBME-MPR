@@ -45,6 +45,12 @@ def load_dicom_data(folder_path):
         # This is far more robust for correct anatomical ordering.
         slices.sort(key=lambda s: float(s.ImagePositionPatient[2]))
 
+        text_data = []
+        for field in ["BodyPartExamined", "StudyDescription", "SeriesDescription", "ProtocolName"]:
+            value = slices[0].get(field)
+            if value:
+                text_data.append(field + ": " + str(value).upper())
+
         # 3️⃣ Apply Rescale Slope/Intercept and stack slices
         # It's important to apply these *before* windowing to get Hounsfield Units (HU) or other quantitative values.
         image_stack = np.stack([s.pixel_array * float(getattr(s, 'RescaleSlope', 1)) +
@@ -93,11 +99,11 @@ def load_dicom_data(folder_path):
 
         dims = image_stack.shape
 
-        return image_stack, affine, dims, intensity_min, intensity_max
+        return image_stack, affine, dims, intensity_min, intensity_max, text_data
 
     except Exception as e:
         print(f"Error loading DICOM data: {e}")
-        return None, None, None, 0, 1
+        return None, None, None, 0, 1, None
 
 
 def load_nifti_data(file_path):

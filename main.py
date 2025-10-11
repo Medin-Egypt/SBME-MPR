@@ -1,3 +1,4 @@
+import tensorflow as tf
 import sys
 import numpy as np
 from PyQt5.QtWidgets import (
@@ -8,6 +9,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSize, QEvent, QTimer
 from PyQt5.QtGui import QPixmap, QIcon, QImage
 import utils.loader as loader
+import utils.detect_orientation as od
 import time
 
 
@@ -236,7 +238,7 @@ class SliceViewLabel(QLabel):
             return
         
         label_size = self.size()
-        
+
         # Ensure we have valid dimensions
         if label_size.width() < 10 or label_size.height() < 10:
             return
@@ -330,6 +332,8 @@ class MPRViewer(QMainWindow):
 
         self.rot_x_deg = 0
         self.rot_y_deg = 0
+
+
         self.view_labels = {}
         self.view_panels = {}
 
@@ -442,7 +446,7 @@ class MPRViewer(QMainWindow):
                 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load NIfTI file:\n{str(e)}")
-    
+
     def open_dicom_folder(self):
         """Open a folder dialog and load DICOM files from the selected folder."""
         folder_path = QFileDialog.getExistingDirectory(
@@ -451,12 +455,13 @@ class MPRViewer(QMainWindow):
             "",
             QFileDialog.ShowDirsOnly
         )
-        
+
         if folder_path:
             try:
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_dicom_data(folder_path)
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, organ_data = loader.load_dicom_data(
+                    folder_path)
                 self.file_loaded = True
-                
+
                 # Reset slices to middle
                 self.slices = {
                     'axial': self.dims[2] // 2,
@@ -464,11 +469,27 @@ class MPRViewer(QMainWindow):
                     'sagittal': self.dims[0] // 2,
                     'oblique': self.dims[2] // 2
                 }
-                
+
+                # --- Integration Point ---
+                # 1. Get the middle axial slice data directly from the loaded volume
+                middle_slice_data = self.data[:, :, self.slices['axial']]
+
+                # 2. Call the utility function to get the orientation
+                orientation, confidence = od.predict_dicom_image(middle_slice_data)
+
+                # 3. Prepare the result string
+                orientation_info = f"\n\nDetected Orientation: {orientation} ({confidence:.2f}% confidence)"
+                # --- End Integration ---
+
                 # Update all visible views
                 self.show_main_views_initially()
-                QMessageBox.information(self, "Success", f"DICOM folder loaded successfully!\nDimensions: {self.dims}")
-                
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{"\n".join(organ_data)}"
+                    # <-- Updated message
+                )
+
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
 
