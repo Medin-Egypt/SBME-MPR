@@ -3,9 +3,9 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QGridLayout, QPushButton, QLabel,
-    QFrame, QGroupBox, QSizePolicy, QButtonGroup
+    QFrame, QGroupBox, QSizePolicy, QButtonGroup, QFileDialog, QMessageBox
 )
-from PyQt5.QtCore import Qt, QSize, QEvent
+from PyQt5.QtCore import Qt, QSize, QEvent, QTimer
 from PyQt5.QtGui import QPixmap, QIcon, QImage
 import utils.loader as loader
 import time
@@ -15,7 +15,7 @@ import time
 class SliceViewLabel(QLabel):
     """
     Custom QLabel that handles mouse wheel events to scroll through volume slices,
-    contrast adjustment, and zoom functionality.
+    contrast adjustment, zoom functionality, and cine mode.
     """
     def __init__(self, parent_viewer, view_type, ui_title):
         super().__init__()
@@ -54,6 +54,47 @@ class SliceViewLabel(QLabel):
         # Prevent rapid zoom events
         self._last_zoom_time = 0
         self._zoom_cooldown = 100  # milliseconds
+        
+        # Cine mode state
+        self.cine_timer = QTimer()
+        self.cine_timer.timeout.connect(self._cine_next_slice)
+        self.cine_active = False
+        self.cine_fps = 10  # Frames per second
+        
+    def _cine_next_slice(self):
+        """Advance to the previous slice in cine mode (going inward/zooming in)."""
+        if not self.cine_active:
+            return
+            
+        current_slice = self.parent_viewer.slices[self.view_type]
+        
+        # Determine max slice based on view type
+        if self.view_type in ('axial', 'oblique'):
+            max_dim_index = 2
+        elif self.view_type == 'coronal':
+            max_dim_index = 1
+        elif self.view_type == 'sagittal':
+            max_dim_index = 0
+        else:
+            return
+        
+        max_slice = self.parent_viewer.dims[max_dim_index]
+        # Go backwards (subtract 1) to zoom in instead of out
+        new_slice = (current_slice - 1) % max_slice
+        self.parent_viewer.slices[self.view_type] = new_slice
+        self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
+    
+    def start_cine(self):
+        """Start cine mode playback."""
+        if not self.cine_active:
+            self.cine_active = True
+            self.cine_timer.start(1000 // self.cine_fps)  # Convert FPS to milliseconds
+            
+    def stop_cine(self):
+        """Stop cine mode playback."""
+        if self.cine_active:
+            self.cine_active = False
+            self.cine_timer.stop()
         
     def wheelEvent(self, event):
         slide_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_0")
@@ -124,8 +165,15 @@ class SliceViewLabel(QLabel):
     def mousePressEvent(self, event):
         contrast_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_1")
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
+        cine_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_2")
         
-        if zoom_btn and zoom_btn.isChecked() and event.button() == Qt.LeftButton:
+        if cine_btn and cine_btn.isChecked() and event.button() == Qt.LeftButton:
+            # Toggle cine mode playback
+            if self.cine_active:
+                self.stop_cine()
+            else:
+                self.start_cine()
+        elif zoom_btn and zoom_btn.isChecked() and event.button() == Qt.LeftButton:
             # Pan mode when zoomed
             if self.zoom_factor > 1.0:
                 self._panning = True
@@ -243,9 +291,7 @@ class SliceViewLabel(QLabel):
     def set_image_pixmap(self, pixmap):
         """Store the original high-quality pixmap and apply zoom/pan."""
         self._original_pixmap = pixmap
-        # Use QTimer to defer the zoom/pan application
-        from PyQt5.QtCore import QTimer
-        QTimer.singleShot(0, self._apply_zoom_and_pan)
+        self._apply_zoom_and_pan()
     
     def reset_zoom(self):
         """Reset zoom and pan to default values."""
@@ -257,7 +303,7 @@ class SliceViewLabel(QLabel):
 
 
 class MPRViewer(QMainWindow):
-    def __init__(self):
+    def __init__(self, file_path=None):
         super().__init__()
         self.setWindowTitle("MPR VIEWER")
         self.setGeometry(100, 100, 1200, 800)
@@ -266,9 +312,24 @@ class MPRViewer(QMainWindow):
         self.setMinimumSize(800, 600)
         self.setMaximumSize(16777215, 16777215)  # Qt's maximum
 
-        # Load data (NIfTI by default)
-        self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data("ct.nii.gz")
-        # self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_dicom_data("full")
+        # Load data based on provided file path or prompt user
+        if file_path is None:
+            file_path = self.prompt_file_selection()
+            if file_path is None:
+                # User cancelled, exit application
+                QMessageBox.warning(self, "No File Selected", "No file was selected. Application will exit.")
+                sys.exit(0)
+        
+        # Load the selected file
+        try:
+            if file_path.lower().endswith('.nii.gz') or file_path.lower().endswith('.nii'):
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data(file_path)
+            else:
+                # Assume it's a DICOM directory
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_dicom_data(file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Error Loading File", f"Failed to load file:\n{str(e)}")
+            sys.exit(1)
 
         # Slice indices
         self.slices = {
@@ -344,7 +405,7 @@ class MPRViewer(QMainWindow):
         self.add_image_to_button("tool_btn_0_2", "Icons/loupe.png", "Zoom Mode")
         self.add_image_to_button("tool_btn_1_0", "Icons/expand.png", "Crop Mode")
         self.add_image_to_button("tool_btn_1_1", "Icons/rotating-arrow-to-the-right.png", "Rotate Mode")
-        self.add_image_to_button("tool_btn_1_2", "Icons/video.png", "Cine Mode")
+        self.add_image_to_button("tool_btn_1_2", "Icons/video.png", "Cine Mode (Click view to start/stop)")
         self.add_image_to_button("export_btn_0", "Icons/all.png", "Export All")
         self.add_image_to_button("export_btn_1", "Icons/crop.png", "Crop & Export")
 
@@ -356,6 +417,37 @@ class MPRViewer(QMainWindow):
 
         # Redraw on resize
         self.centralWidget().installEventFilter(self)
+        
+        # Connect cine button to stop all cine modes when unchecked
+        cine_btn = self.findChild(QPushButton, "tool_btn_1_2")
+        if cine_btn:
+            cine_btn.clicked.connect(self.handle_cine_button_toggle)
+    
+    def prompt_file_selection(self):
+        """Prompt user to select a NIfTI or DICOM file/folder."""
+        # Create file dialog
+        file_dialog = QFileDialog(self)
+        file_dialog.setWindowTitle("Select Medical Image File")
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        
+        # Set file filters for NIfTI files
+        file_dialog.setNameFilter("NIfTI Files (*.nii *.nii.gz);;All Files (*)")
+        
+        # Show dialog and get result
+        if file_dialog.exec_() == QFileDialog.Accepted:
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                return selected_files[0]
+        
+        return None
+
+    def handle_cine_button_toggle(self, checked):
+        """Handle cine button toggle - stop all cine playback when unchecked."""
+        if not checked:
+            # Stop cine mode on all views
+            for label in self.view_labels.values():
+                if isinstance(label, SliceViewLabel):
+                    label.stop_cine()
 
     def eventFilter(self, obj, event):
         if obj == self.centralWidget() and event.type() == QEvent.Resize:
@@ -363,7 +455,6 @@ class MPRViewer(QMainWindow):
             if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
                 # Use a timer to defer the update after resize is complete
                 if not hasattr(self, '_resize_timer'):
-                    from PyQt5.QtCore import QTimer
                     self._resize_timer = QTimer()
                     self._resize_timer.setSingleShot(True)
                     self._resize_timer.timeout.connect(self.update_visible_views)
