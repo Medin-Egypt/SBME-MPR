@@ -1,3 +1,6 @@
 /venv/
 ct.nii.gz
 CTdata/
+*.dcm
+*.nii
+*.nii.gz
