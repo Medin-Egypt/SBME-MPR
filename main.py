@@ -17,7 +17,7 @@ import time
 class SliceViewLabel(QLabel):
     """
     Custom QLabel that handles mouse wheel events to scroll through volume slices,
-    contrast adjustment, zoom functionality, cine mode, and now draws/syncs crosshairs.
+    contrast adjustment, zoom functionality, cine mode, crop mode, and draws/syncs crosshairs.
     """
     def __init__(self, parent_viewer, view_type, ui_title):
         super().__init__()
@@ -35,6 +35,11 @@ class SliceViewLabel(QLabel):
         self.normalized_crosshair_x = 0.5
         self.normalized_crosshair_y = 0.5
         self._dragging_crosshair = False
+
+        # Crop mode state
+        self._crop_start = None
+        self._crop_end = None
+        self._is_cropping = False
 
         # State for contrast mode
         self._dragging = False
@@ -154,9 +159,14 @@ class SliceViewLabel(QLabel):
         crosshair_tool_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_0")
         contrast_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_1")
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
+        crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
         cine_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_2")
         
-        if crosshair_tool_btn and crosshair_tool_btn.isChecked() and event.button() == Qt.LeftButton:
+        if crop_btn and crop_btn.isChecked() and event.button() == Qt.LeftButton:
+            self._is_cropping = True
+            self._crop_start = event.pos()
+            self._crop_end = event.pos()
+        elif crosshair_tool_btn and crosshair_tool_btn.isChecked() and event.button() == Qt.LeftButton:
             self._dragging_crosshair = True
             self._update_crosshair(event.pos())
         elif cine_btn and cine_btn.isChecked() and event.button() == Qt.LeftButton:
@@ -176,8 +186,12 @@ class SliceViewLabel(QLabel):
 
     def mouseMoveEvent(self, event):
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
+        crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
 
-        if self._dragging_crosshair:
+        if self._is_cropping and crop_btn and crop_btn.isChecked():
+            self._crop_end = event.pos()
+            self.update()
+        elif self._dragging_crosshair:
             self._update_crosshair(event.pos())
             return
             
@@ -207,7 +221,13 @@ class SliceViewLabel(QLabel):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if self._dragging_crosshair and event.button() == Qt.LeftButton:
+        crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
+        
+        if self._is_cropping and event.button() == Qt.LeftButton and crop_btn and crop_btn.isChecked():
+            self._is_cropping = False
+            if self._crop_start and self._crop_end:
+                self.parent_viewer.finalize_crop(self.view_type, self._crop_start, self._crop_end, self.size())
+        elif self._dragging_crosshair and event.button() == Qt.LeftButton:
             self._dragging_crosshair = False
         elif self._panning and event.button() == Qt.LeftButton:
             self._panning = False
@@ -252,6 +272,58 @@ class SliceViewLabel(QLabel):
 
     def paintEvent(self, event):
         super().paintEvent(event)
+        
+        crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
+        
+        # Draw crop rectangle while dragging
+        if crop_btn and crop_btn.isChecked() and self._is_cropping and self._crop_start and self._crop_end:
+            painter = QPainter(self)
+            pen = QPen(QColor(255, 0, 0))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            
+            x1 = min(self._crop_start.x(), self._crop_end.x())
+            y1 = min(self._crop_start.y(), self._crop_end.y())
+            x2 = max(self._crop_start.x(), self._crop_end.x())
+            y2 = max(self._crop_start.y(), self._crop_end.y())
+            
+            painter.drawRect(x1, y1, x2 - x1, y2 - y1)
+            painter.end()
+        
+        # Draw stored crop bounds
+        if crop_btn and crop_btn.isChecked() and self.parent_viewer.crop_bounds:
+            bounds = self.parent_viewer.crop_bounds
+            painter = QPainter(self)
+            pen = QPen(QColor(255, 0, 0))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            
+            # Get current view dimensions
+            label_width = self.width()
+            label_height = self.height()
+            
+            # Calculate rectangle based on view type
+            if self.view_type == 'axial':
+                x1 = int(bounds['sagittal_min'] * label_width)
+                x2 = int(bounds['sagittal_max'] * label_width)
+                y1 = int(bounds['coronal_min'] * label_height)
+                y2 = int(bounds['coronal_max'] * label_height)
+            elif self.view_type == 'coronal':
+                x1 = int(bounds['sagittal_min'] * label_width)
+                x2 = int(bounds['sagittal_max'] * label_width)
+                y1 = int(bounds['axial_min'] * label_height)
+                y2 = int(bounds['axial_max'] * label_height)
+            elif self.view_type == 'sagittal':
+                x1 = int(bounds['coronal_min'] * label_width)
+                x2 = int(bounds['coronal_max'] * label_width)
+                y1 = int(bounds['axial_min'] * label_height)
+                y2 = int(bounds['axial_max'] * label_height)
+            else:
+                painter.end()
+                return
+            
+            painter.drawRect(x1, y1, x2 - x1, y2 - y1)
+            painter.end()
         
         if self.parent_viewer.file_loaded and self._original_pixmap and not self._original_pixmap.isNull():
             painter = QPainter(self)
@@ -374,9 +446,13 @@ class MPRViewer(QMainWindow):
         self.intensity_max = 255
         self.file_loaded = False
         
-        # --- NEW: Store original contrast values ---
+        # Store original contrast values
         self.original_intensity_min = 0
         self.original_intensity_max = 255
+        
+        # Crop bounds (normalized 0-1 coordinates)
+        self.crop_bounds = None
+        self.original_data = None
         
         self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
 
@@ -425,7 +501,6 @@ class MPRViewer(QMainWindow):
         if main_views_btn:
             main_views_btn.setChecked(True)
         
-        # Set a default tool
         default_tool = self.findChild(QPushButton, "tool_btn_0_0")
         if default_tool:
             default_tool.setChecked(True)
@@ -438,7 +513,7 @@ class MPRViewer(QMainWindow):
             
         self.show_main_views_initially()
 
-    # --- NEW: Reset logic methods ---
+    # --- Reset logic methods ---
     
     def on_reset_clicked(self):
         """Handler for the Reset button. Resets the currently active tool."""
@@ -451,16 +526,17 @@ class MPRViewer(QMainWindow):
 
         btn_name = checked_btn.objectName()
 
-        if btn_name == "tool_btn_0_0":  # Crosshair/Slice
+        if btn_name == "tool_btn_0_0":
             self.reset_crosshair_and_slices()
-        elif btn_name == "tool_btn_0_1":  # Contrast
+        elif btn_name == "tool_btn_0_1":
             self.reset_contrast()
-        elif btn_name == "tool_btn_0_2":  # Zoom/Pan
+        elif btn_name == "tool_btn_0_2":
             self.reset_all_zooms()
-        elif btn_name == "tool_btn_1_1":  # Rotate
+        elif btn_name == "tool_btn_1_0":
+            self.reset_crop()
+        elif btn_name == "tool_btn_1_1":
             self.reset_rotation()
         
-        # After resetting parameters, update all views to show the changes
         self.update_all_views()
 
     def reset_all_zooms(self):
@@ -487,42 +563,115 @@ class MPRViewer(QMainWindow):
         self.slices['sagittal'] = self.dims[0] // 2
         self.slices['oblique'] = self.dims[2] // 2
 
-    def set_slice_from_crosshair(self, source_view, norm_x, norm_y):
-        """
-        Updates slice indices based on the normalized crosshair position from a source view.
-        The stored norm_coords now directly reflect the mouse position, while the
-        slice calculation internally inverts the y-axis where needed.
-        """
-        if not self.file_loaded or self.dims is None: return
+    def reset_crop(self):
+        """Resets the crop to show the full volume."""
+        if self.original_data is not None:
+            self.data = self.original_data.copy()
+            self.dims = self.data.shape
+            self.crop_bounds = None
+            self.reset_crosshair_and_slices()
 
-        # Ensure coordinates are within bounds [0, 1]
+    def set_slice_from_crosshair(self, source_view, norm_x, norm_y):
+        """Updates slice indices based on the normalized crosshair position from a source view."""
+        if not self.file_loaded or self.dims is None:
+            return
+
         norm_x = max(0.0, min(1.0, norm_x))
         norm_y = max(0.0, min(1.0, norm_y))
 
         if source_view == 'axial':
-            # Store direct coordinates
             self.norm_coords['S'] = norm_x
             self.norm_coords['C'] = norm_y
-            # Calculate slices
             self.slices['coronal'] = int(norm_y * (self.dims[1] - 1))
             self.slices['sagittal'] = int(norm_x * (self.dims[0] - 1))
-
         elif source_view == 'coronal':
-            # Store direct coordinates
             self.norm_coords['S'] = norm_x
             self.norm_coords['A'] = norm_y
-            # FIX: Use the inverted y-coordinate ONLY for the slice calculation
             self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
             self.slices['sagittal'] = int(norm_x * (self.dims[0] - 1))
-
         elif source_view == 'sagittal':
-            # Store direct coordinates
             self.norm_coords['C'] = norm_x
             self.norm_coords['A'] = norm_y
-            # FIX: Use the inverted y-coordinate ONLY for the slice calculation
             self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
             self.slices['coronal'] = int(norm_x * (self.dims[1] - 1))
+            
         self.update_all_views()
+
+    def finalize_crop(self, view_type, start_pos, end_pos, label_size):
+        """Convert screen coordinates to normalized crop bounds and store them."""
+        if not self.file_loaded:
+            return
+        
+        # Normalize coordinates to 0-1 range
+        x1 = min(start_pos.x(), end_pos.x()) / label_size.width()
+        x2 = max(start_pos.x(), end_pos.x()) / label_size.width()
+        y1 = min(start_pos.y(), end_pos.y()) / label_size.height()
+        y2 = max(start_pos.y(), end_pos.y()) / label_size.height()
+        
+        # Clamp to valid range
+        x1, x2 = max(0.0, x1), min(1.0, x2)
+        y1, y2 = max(0.0, y1), min(1.0, y2)
+        
+        # Initialize crop bounds if not exists
+        if self.crop_bounds is None:
+            self.crop_bounds = {
+                'sagittal_min': 0.0, 'sagittal_max': 1.0,
+                'coronal_min': 0.0, 'coronal_max': 1.0,
+                'axial_min': 0.0, 'axial_max': 1.0
+            }
+        
+        # Update bounds based on view type
+        if view_type == 'axial':
+            self.crop_bounds['sagittal_min'] = x1
+            self.crop_bounds['sagittal_max'] = x2
+            self.crop_bounds['coronal_min'] = y1
+            self.crop_bounds['coronal_max'] = y2
+        elif view_type == 'coronal':
+            self.crop_bounds['sagittal_min'] = x1
+            self.crop_bounds['sagittal_max'] = x2
+            self.crop_bounds['axial_min'] = y1
+            self.crop_bounds['axial_max'] = y2
+        elif view_type == 'sagittal':
+            self.crop_bounds['coronal_min'] = x1
+            self.crop_bounds['coronal_max'] = x2
+            self.crop_bounds['axial_min'] = y1
+            self.crop_bounds['axial_max'] = y2
+        
+        # Update all views to show the crop rectangle
+        self.update_all_views()
+
+    def apply_crop(self):
+        """Apply the current crop bounds to the data, permanently cropping the volume."""
+        if not self.file_loaded or self.crop_bounds is None or self.original_data is None:
+            return
+        
+        # Convert normalized bounds to voxel indices
+        sag_min = int(self.crop_bounds['sagittal_min'] * self.dims[0])
+        sag_max = int(self.crop_bounds['sagittal_max'] * self.dims[0])
+        cor_min = int(self.crop_bounds['coronal_min'] * self.dims[1])
+        cor_max = int(self.crop_bounds['coronal_max'] * self.dims[1])
+        ax_min = int(self.crop_bounds['axial_min'] * self.dims[2])
+        ax_max = int(self.crop_bounds['axial_max'] * self.dims[2])
+        
+        # Ensure valid ranges
+        sag_min, sag_max = max(0, sag_min), min(self.dims[0], sag_max)
+        cor_min, cor_max = max(0, cor_min), min(self.dims[1], cor_max)
+        ax_min, ax_max = max(0, ax_min), min(self.dims[2], ax_max)
+        
+        # Apply crop to data
+        self.data = self.data[sag_min:sag_max, cor_min:cor_max, ax_min:ax_max].copy()
+        self.dims = self.data.shape
+        
+        # Clear crop bounds after applying
+        self.crop_bounds = None
+        
+        # Reset slices to middle of cropped volume
+        self.reset_crosshair_and_slices()
+        
+        # Update all views
+        self.update_all_views()
+        
+        QMessageBox.information(self, "Crop Applied", f"Volume cropped successfully!\nNew dimensions: {self.dims}")
 
     def update_all_views(self):
         views_to_update = []
@@ -545,11 +694,15 @@ class MPRViewer(QMainWindow):
                 self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data(file_path)
                 self.file_loaded = True
                 
-                # --- NEW: Store original contrast values on load ---
+                # Store original contrast values on load
                 self.original_intensity_min = self.intensity_min
                 self.original_intensity_max = self.intensity_max
+                
+                # Store original data for crop reset
+                self.original_data = self.data.copy()
+                self.crop_bounds = None
 
-                self.reset_crosshair_and_slices() # Use reset function to initialize
+                self.reset_crosshair_and_slices()
                 self.reset_all_zooms()
                 self.reset_rotation()
                 
@@ -566,11 +719,15 @@ class MPRViewer(QMainWindow):
                 self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, organ_data = loader.load_dicom_data(folder_path)
                 self.file_loaded = True
                 
-                # --- NEW: Store original contrast values on load ---
+                # Store original contrast values on load
                 self.original_intensity_min = self.intensity_min
                 self.original_intensity_max = self.intensity_max
+                
+                # Store original data for crop reset
+                self.original_data = self.data.copy()
+                self.crop_bounds = None
 
-                self.reset_crosshair_and_slices() # Use reset function to initialize
+                self.reset_crosshair_and_slices()
                 self.reset_all_zooms()
                 self.reset_rotation()
                 
@@ -583,7 +740,7 @@ class MPRViewer(QMainWindow):
                 
                 QMessageBox.information(
                     self, "Success",
-                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{"\n".join(organ_data)}"
+                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{'\n'.join(organ_data)}"
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
@@ -613,10 +770,13 @@ class MPRViewer(QMainWindow):
         return QPixmap.fromImage(q_img)
 
     def update_view(self, ui_title: str, view_type: str, sync_crosshair=False):
-        if ui_title not in self.view_labels: return
+        if ui_title not in self.view_labels:
+            return
         label = self.view_labels[ui_title]
-        if not label.isVisible() or label.width() < 10 or label.height() < 10: return
-        if not self.file_loaded or self.data is None: return
+        if not label.isVisible() or label.width() < 10 or label.height() < 10:
+            return
+        if not self.file_loaded or self.data is None:
+            return
 
         if view_type == 'segmentation':
             self.update_segmentation_view()
@@ -660,11 +820,13 @@ class MPRViewer(QMainWindow):
         visible_views = [name for name, panel in self.view_panels.items() if panel.isVisible()]
         for view_name in visible_views:
             view_type = view_name
-            if view_name == 'frontal': view_type = 'coronal'
+            if view_name == 'frontal':
+                view_type = 'coronal'
             self.update_view(view_name, view_type, sync_crosshair=True)
             
     def maximize_view(self, view_name):
-        if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled): return
+        if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled):
+            return
 
         self.maximized_view = view_name
         
@@ -673,7 +835,7 @@ class MPRViewer(QMainWindow):
                 panel.hide()
             else:
                 self.viewing_grid.removeWidget(panel)
-                self.viewing_grid.addWidget(panel, 0, 0, 2, 2) 
+                self.viewing_grid.addWidget(panel, 0, 0, 2, 2)
                 panel.show()
                 
         self.viewing_grid.invalidate()
@@ -681,7 +843,8 @@ class MPRViewer(QMainWindow):
         self.update_visible_views()
         
     def restore_views(self):
-        if self.maximized_view is None: return
+        if self.maximized_view is None:
+            return
             
         max_panel = self.view_panels[self.maximized_view]
         self.viewing_grid.removeWidget(max_panel)
@@ -721,9 +884,10 @@ class MPRViewer(QMainWindow):
                 panel.hide()
 
     def toggle_main_views(self, checked):
-        if not checked: return
+        if not checked:
+            return
         
-        self.restore_views() 
+        self.restore_views()
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
@@ -822,15 +986,17 @@ class MPRViewer(QMainWindow):
             btn.setCheckable(True)
             mode_layout.addWidget(btn, 0, i)
             self.mode_group_buttons.addButton(btn, i)
-            if i == 0: btn.clicked.connect(self.toggle_main_views)
-            elif i == 1: btn.clicked.connect(self.toggle_segmentation_view)
-            elif i == 2: btn.clicked.connect(self.toggle_oblique_view)
+            if i == 0:
+                btn.clicked.connect(self.toggle_main_views)
+            elif i == 1:
+                btn.clicked.connect(self.toggle_segmentation_view)
+            elif i == 2:
+                btn.clicked.connect(self.toggle_oblique_view)
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
 
         tools_group = QGroupBox("Tools:")
-        # --- NEW: Use a QVBoxLayout to hold the grid and the reset button ---
-        tools_main_layout = QVBoxLayout() 
+        tools_main_layout = QVBoxLayout()
         tools_grid_widget = QWidget()
         tools_layout = QGridLayout(tools_grid_widget)
         
@@ -847,7 +1013,7 @@ class MPRViewer(QMainWindow):
         
         tools_main_layout.addWidget(tools_grid_widget)
 
-        # --- NEW: Add the Reset button ---
+        # Add the Reset button
         reset_btn = QPushButton("Reset")
         reset_btn.setMinimumHeight(35)
         reset_btn.clicked.connect(self.on_reset_clicked)
@@ -877,7 +1043,28 @@ class MPRViewer(QMainWindow):
     def toggle_export_button(self, button):
         if button.isChecked():
             button.setChecked(False)
-            print(f"Export triggered: {button.toolTip()}")
+            
+            if button.objectName() == "export_btn_1":  # DICOM export
+                if not self.file_loaded:
+                    QMessageBox.warning(self, "No Data", "Please load a file first.")
+                    return
+                
+                if self.crop_bounds is not None:
+                    reply = QMessageBox.question(
+                        self, "Apply Crop",
+                        "Do you want to apply the current crop before exporting?",
+                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+                    )
+                    
+                    if reply == QMessageBox.Cancel:
+                        return
+                    elif reply == QMessageBox.Yes:
+                        self.apply_crop()
+                
+                print(f"Export triggered: {button.toolTip()}")
+                QMessageBox.information(self, "Export", f"DICOM export initiated.\nCurrent dimensions: {self.dims}")
+            else:
+                print(f"Export triggered: {button.toolTip()}")
 
     def create_viewing_area(self):
         widget = QWidget()
@@ -961,6 +1148,7 @@ class MPRViewer(QMainWindow):
                 button.setText(name)
             if tip:
                 button.setToolTip(tip)
+
 
 def main():
     app = QApplication(sys.argv)

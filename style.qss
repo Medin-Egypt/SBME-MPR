@@ -1,129 +1,168 @@
 /* --- General Widget Styling --- */
 QWidget {
-background-color: #1A202C;
-color: #E2E8F0;
-font-family: 'Segoe UI', 'Roboto', sans-serif;
-font-size: 14px;
+    background-color: #1A202C;
+    color: #E2E8F0;
+    font-family: 'Segoe UI', 'Roboto', sans-serif;
+    font-size: 14px;
+}
+
+/* --- Custom Title Bar Styling --- */
+QWidget#custom_title_bar {
+    background-color: #2D3748;
+    border-bottom: 2px solid #4A5568;
+}
+
+QLabel#title_label {
+    color: #63B3ED;
+    background-color: transparent;
+    border: none;
+}
+
+QPushButton#minimize_btn,
+QPushButton#maximize_btn {
+    background-color: transparent;
+    color: #E2E8F0;
+    border: none;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+QPushButton#minimize_btn:hover,
+QPushButton#maximize_btn:hover {
+    background-color: #4A5568;
+}
+
+QPushButton#close_btn {
+    background-color: transparent;
+    color: #E2E8F0;
+    border: none;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+QPushButton#close_btn:hover {
+    background-color: #F56565;
+    color: white;
 }
 
 /* --- ScrollBar Styling --- */
 QScrollBar:vertical {
-border: none;
-background: #2D3748;
-width: 8px;
-margin: 0px 0px 0px 0px;
+    border: none;
+    background: #2D3748;
+    width: 8px;
+    margin: 0px 0px 0px 0px;
 }
 QScrollBar::handle:vertical {
-background: #4A5568;
-min-height: 20px;
+    background: #4A5568;
+    min-height: 20px;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-border: none;
-background: none;
+    border: none;
+    background: none;
 }
 
 /* --- Group Box Styling --- */
 QGroupBox {
-font-weight: bold;
-border: 2px solid #2D3748;
-border-radius: 5px;
-margin-top: 15px;
-padding-top: 10px;
-background-color: #2D3748;
+    font-weight: bold;
+    border: 2px solid #2D3748;
+    border-radius: 50px;
+    margin-top: 15px;
+    padding-top: 10px;
+    background-color: #2D3748;
 }
 
 QGroupBox::title {
-subcontrol-origin: margin;
-subcontrol-position: top left;
-left: 10px;
-padding: 0 5px 0 5px;
-color: #63B3ED;
-font-size: 16px;
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 5px 0 5px;
+    color: #63B3ED;
+    font-size: 16px;
 }
 
 /* --- Push Button Styling (General) --- */
 QPushButton {
-background-color: #4A5568;
-color: #E2E8F0;
-border: 1px solid #4A5568;
-border-radius: 5px;
-padding: 5px;
+    background-color: #4A5568;
+    color: #E2E8F0;
+    border: 1px solid #4A5568;
+    border-radius: 5px;
+    padding: 5px;
 }
 
 QPushButton:hover {
-background-color: #63B3ED;
-color: #1A202C;
+    background-color: #63B3ED;
+    color: #1A202C;
 }
 
 QPushButton:pressed {
-background-color: #4A5568;
-border: 1px solid #63B3ED;
+    background-color: #4A5568;
+    border: 1px solid #63B3ED;
 }
 
 QPushButton:checked {
-background-color: #63B3ED;
-border: 1px solid #63B3ED;
-color: #1A202C;
+    background-color: #63B3ED;
+    border: 1px solid #63B3ED;
+    color: #1A202C;
 }
 
 /* --- Specific Button Styling (Load/Export) --- */
 QPushButton[objectName^="open_btn_"] {
-background-color: #4A5568;
-border: 1px solid #63B3ED;
-color: #63B3ED;
+    background-color: #4A5568;
+    border: 1px solid #63B3ED;
+    color: #63B3ED;
 }
 
 QPushButton[objectName^="open_btn_"]:hover {
-background-color: #63B3ED;
-color: #1A202C;
+    background-color: #63B3ED;
+    color: #1A202C;
 }
 
 QPushButton[objectName^="export_btn_"] {
-background-color: #4A5568;
-border: 1px solid #F56565;
-color: #F56565;
+    background-color: #4A5568;
+    border: 1px solid #F56565;
+    color: #F56565;
 }
 
 QPushButton[objectName^="export_btn_"]:hover {
-background-color: #F56565;
-color: #1A202C;
+    background-color: #F56565;
+    color: #1A202C;
 }
 
 QPushButton[objectName^="export_btn_"]:checked {
-background-color: #F56565;
-color: #1A202C;
+    background-color: #F56565;
+    color: #1A202C;
 }
 
 /* --- Frame and Panel Styling --- */
 QFrame {
-background-color: #2D3748;
-border: 1px solid #4A5568;
-border-radius: 5px;
+    background-color: #2D3748;
+    border: 1px solid #4A5568;
+    border-radius: 5px;
 }
 
 /* Main window background frame */
 QFrame#sidebar {
-background-color: #1A202C;
-border: 2px solid #2D3748;
+    background-color: #1A202C;
+    border: 2px solid #2D3748;
 }
 
 /* Styles for the main viewing area panels */
 QFrame[objectName^="viewing_panel_"] {
-background-color: #2D3748;
-border: 2px solid #4A5568;
+    background-color: #2D3748;
+    border: 2px solid #4A5568;
 }
 
 /* Styles for the view labels (where the images are shown) */
 QLabel[objectName^="view_"] {
-background-color: black;
-border: 1px solid #4A5568;
-color: #4A5568;
-font-size: 18px;
+    background-color: black;
+    border: 1px solid #4A5568;
+    color: #4A5568;
+    font-size: 18px;
 }
 
 /* Styles for the view titles within panels */
 QLabel[objectName^="view_title_"] {
-color: #E2E8F0;
-font-size: 16px;
-font-weight: bold;
+    color: #E2E8F0;
+    font-size: 16px;
+    font-weight: bold;
 }
