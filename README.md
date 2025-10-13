@@ -41,7 +41,7 @@ Before running, install all dependencies:
 pip install pyqt5 tensorflow numpy scipy nibabel pydicom
 ```
 ## 🚀 How It Works        
-1.**Run the application**
+1.**Run the application**       
 2.**Load Medical Data**        
 Choose **“Open DICOM Folder”** or **“Open NIfTI File”** from the sidebar.    
 The `loader.py` module:     
