@@ -10,6 +10,7 @@ from PyQt5.QtCore import Qt, QSize, QEvent, QTimer, QPoint
 from PyQt5.QtGui import QPixmap, QIcon, QImage, QPainter, QPen, QColor
 import utils.loader as loader
 import utils.detect_orientation as od
+from utils.SliceViewLabel import  SliceViewLabel
 import time
 
 
