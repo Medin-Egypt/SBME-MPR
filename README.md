@@ -24,3 +24,72 @@ Automatic left–right flipping and sorting for proper anatomical alignment.
 Custom QSS styling with clean design and smooth contrast.        
 • **Export**       
 Save processed data back to **DICOM** or **NIfTI** format.        
+## ⚙️ Tech Stack  
+
+| Layer | Technology / Library | Purpose |
+|-------|-----------------------|----------|
+| **Language** | Python 3 | Core programming language |
+| **GUI Framework** | PyQt5 | For the main application interface |
+| **Medical Data Handling** | pydicom, nibabel | Load and interpret DICOM & NIfTI data |
+| **Computation** | numpy, scipy | Image array operations and interpolation |
+| **Machine Learning** | TensorFlow | Detect orientation & image metadata |
+| **Styling** | QSS | Custom dark UI theme |
+| **System Tools** | os, sys, time | File I/O and app runtime functions |
+## 💻 Requirements      
+Before running, install all dependencies:     
+```bash
+pip install pyqt5 tensorflow numpy scipy nibabel pydicom
+```
+## 🚀 How It Works        
+1.**Run the application**       
+2.**Load Medical Data**        
+Choose **“Open DICOM Folder”** or **“Open NIfTI File”** from the sidebar.    
+The `loader.py` module:     
+• Reads the DICOM or NIfTI data.    
+• Sorts slices by their spatial position.      
+• Fixes orientation and left–right mirroring issues.    
+• Applies proper intensity windowing for clear contrast.      
+3.**Visualize the Scans**      
+View the 3D dataset in four synchronized panels:     
+**Axial**     
+**Coronal**        
+**Sagittal**       
+**Oblique**              
+Move through slices using your mouse wheel or the cine playback controls.      
+4.**Interact with the Images**       
+Use tools from the sidebar to:       
+🔍 **Zoom / Pan** — explore image details.      
+💡 **Contrast** — adjust brightness and contrast levels.    
+✂️ **Crop** — focus on a region of interest.       
+🎞 **Cine Mode** — play slices automatically like a short animation.        
+4.**Switch View Modes**          
+Toggle between:     
+**Main View** — standard three-plane mode.    
+**Oblique View** — diagonal reconstruction.        
+**Segmentation View** — if segmentation data is available.        
+5.**Export Processed Data**      
+Save results in:    
+**NIfTI format (.nii, .nii.gz)**      
+**DICOM series**       
+Export preserves the current orientation and cropping settings.       
+## 🧪 Example Workflow      
+
+
+
+## 👩‍💻 Contributors
+
+**🧑‍🤝‍🧑 Team Members**
+  - **Mohamed Sherif** 
+  - **Bassel Mostafa**
+  - **Mahmoud Zahran** 
+  - **Rawan Kotb** 
+
+ **🧭 Supervised By**     
+         - **Prof. Tamer Basha**     
+         - **Eng. Alaa Tarek**     
+
+
+
+
+   
+
