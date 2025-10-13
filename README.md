@@ -41,7 +41,8 @@ Before running, install all dependencies:
 pip install pyqt5 tensorflow numpy scipy nibabel pydicom
 ```
 ## 🚀 How It Works        
-1.**Run the application**       
+1.**Run the application**  
+
 2.**Load Medical Data**        
 Choose **“Open DICOM Folder”** or **“Open NIfTI File”** from the sidebar.    
 The `loader.py` module:     
@@ -50,13 +51,15 @@ The `loader.py` module:
 • Fixes orientation and left–right mirroring issues.    
 • Applies proper intensity windowing for clear contrast.   
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/ce36d382a09da99d1d801f93bf7d0f8cc2a9d1e4/assets/Screenshot%201.png)
-3.**Visualize the Scans**      
+
+3.**Visualize the Scans**   
 View the 3D dataset in four synchronized panels:     
 **Axial**     
 **Coronal**        
 **Sagittal**       
 **Oblique**              
 Move through slices using your mouse wheel or the cine playback controls.      
+
 4.**Interact with the Images**       
 Use tools from the sidebar to:       
 🔍 **Zoom / Pan** — explore image details.   
@@ -66,17 +69,20 @@ Use tools from the sidebar to:
 ✂️ **Crop** — focus on a region of interest.       
 🎞 **Cine Mode** — play slices automatically like a short animation.
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/09e97cac40f461157c84ce14168445d3a77fd1a1/assets/IMG_0408.gif)
-4.**Switch View Modes**          
+
+5.**Switch View Modes**          
 Toggle between:     
 **Main View** — standard three-plane mode.    
 **Oblique View** — diagonal reconstruction.        
 **Segmentation View** — if segmentation data is available.        
-5.**Export Processed Data**      
+
+6.**Export Processed Data**      
 Save results in:    
 **NIfTI format (.nii, .nii.gz)**      
 **DICOM series**       
 Export preserves the current orientation and cropping settings.       
-## 🧪 Example Workflow      
+## 🧪 Example Workflow 
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/3b9614a7bb250bf6c3e039d1a2b5cfee9b165e6e/assets/IMG_0409.gif)
 
 
 
