@@ -29,11 +29,6 @@ class SliceViewLabel(QLabel):
         self.normalized_crosshair_y = 0.5
         self._dragging_crosshair = False
 
-        # Crop mode state
-        self._crop_start = None
-        self._crop_end = None
-        self._is_cropping = False
-
         # State for contrast mode
         self._dragging = False
         self._last_pos = None
@@ -163,11 +158,7 @@ class SliceViewLabel(QLabel):
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
         cine_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_2")
 
-        if crop_btn and crop_btn.isChecked() and event.button() == Qt.LeftButton:
-            self._is_cropping = True
-            self._crop_start = event.pos()
-            self._crop_end = event.pos()
-        elif crosshair_tool_btn and crosshair_tool_btn.isChecked() and event.button() == Qt.LeftButton:
+        if crosshair_tool_btn and crosshair_tool_btn.isChecked() and event.button() == Qt.LeftButton:
             self._dragging_crosshair = True
             self._update_crosshair(event.pos())
         elif cine_btn and cine_btn.isChecked() and event.button() == Qt.LeftButton:
@@ -190,10 +181,7 @@ class SliceViewLabel(QLabel):
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
 
-        if self._is_cropping and crop_btn and crop_btn.isChecked():
-            self._crop_end = event.pos()
-            self.update()
-        elif self._dragging_crosshair:
+        if self._dragging_crosshair:
             self._update_crosshair(event.pos())
             return
 
@@ -225,11 +213,7 @@ class SliceViewLabel(QLabel):
     def mouseReleaseEvent(self, event):
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
 
-        if self._is_cropping and event.button() == Qt.LeftButton and crop_btn and crop_btn.isChecked():
-            self._is_cropping = False
-            if self._crop_start and self._crop_end:
-                self.parent_viewer.finalize_crop(self.view_type, self._crop_start, self._crop_end, self.size())
-        elif self._dragging_crosshair and event.button() == Qt.LeftButton:
+        if self._dragging_crosshair and event.button() == Qt.LeftButton:
             self._dragging_crosshair = False
         elif self._panning and event.button() == Qt.LeftButton:
             self._panning = False
@@ -286,57 +270,6 @@ class SliceViewLabel(QLabel):
         super().paintEvent(event)
 
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
-
-        # Draw crop rectangle while dragging
-        if crop_btn and crop_btn.isChecked() and self._is_cropping and self._crop_start and self._crop_end:
-            painter = QPainter(self)
-            pen = QPen(QColor(255, 0, 0))
-            pen.setWidth(2)
-            painter.setPen(pen)
-
-            x1 = min(self._crop_start.x(), self._crop_end.x())
-            y1 = min(self._crop_start.y(), self._crop_end.y())
-            x2 = max(self._crop_start.x(), self._crop_end.x())
-            y2 = max(self._crop_start.y(), self._crop_end.y())
-
-            painter.drawRect(x1, y1, x2 - x1, y2 - y1)
-            painter.end()
-
-        # Draw stored crop bounds
-        if crop_btn and crop_btn.isChecked() and self.parent_viewer.crop_bounds:
-            bounds = self.parent_viewer.crop_bounds
-            painter = QPainter(self)
-            pen = QPen(QColor(255, 0, 0))
-            pen.setWidth(2)
-            painter.setPen(pen)
-
-            # Get current view dimensions
-            label_width = self.width()
-            label_height = self.height()
-
-            # Calculate rectangle based on view type
-            if self.view_type == 'axial':
-                x1 = int(bounds['sagittal_min'] * label_width)
-                x2 = int(bounds['sagittal_max'] * label_width)
-                y1 = int(bounds['coronal_min'] * label_height)
-                y2 = int(bounds['coronal_max'] * label_height)
-            elif self.view_type == 'coronal':
-                x1 = int(bounds['sagittal_min'] * label_width)
-                x2 = int(bounds['sagittal_max'] * label_width)
-                y1 = int(bounds['axial_min'] * label_height)
-                y2 = int(bounds['axial_max'] * label_height)
-            elif self.view_type == 'sagittal':
-                x1 = int(bounds['coronal_min'] * label_width)
-                x2 = int(bounds['coronal_max'] * label_width)
-                y1 = int(bounds['axial_min'] * label_height)
-                y2 = int(bounds['axial_max'] * label_height)
-            else:
-                painter.end()
-                return
-
-            # Draw the normalized rectangle on the label
-            painter.drawRect(x1, y1, x2 - x1, y2 - y1)
-            painter.end()
 
         if self.parent_viewer.file_loaded and self._original_pixmap and not self._original_pixmap.isNull():
             painter = QPainter(self)
