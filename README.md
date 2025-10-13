@@ -48,7 +48,8 @@ The `loader.py` module:
 • Reads the DICOM or NIfTI data.    
 • Sorts slices by their spatial position.      
 • Fixes orientation and left–right mirroring issues.    
-• Applies proper intensity windowing for clear contrast.      
+• Applies proper intensity windowing for clear contrast.   
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/ce36d382a09da99d1d801f93bf7d0f8cc2a9d1e4/assets/Screenshot%201.png)
 3.**Visualize the Scans**      
 View the 3D dataset in four synchronized panels:     
 **Axial**     
