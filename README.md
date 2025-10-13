@@ -35,11 +35,6 @@ Save processed data back to **DICOM** or **NIfTI** format.
 | **Machine Learning** | TensorFlow | Detect orientation & image metadata |
 | **Styling** | QSS | Custom dark UI theme |
 | **System Tools** | os, sys, time | File I/O and app runtime functions |
-## 💻 Installation
-
-```bash
-pip install pyqt5 tensorflow numpy scipy nibabel pydicom
-```     
 ## 💻 Requirements      
 Before running, install all dependencies:     
 ```bash
