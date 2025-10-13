@@ -40,10 +40,6 @@ Save processed data back to **DICOM** or **NIfTI** format.
 ```bash
 pip install pyqt5 tensorflow numpy scipy nibabel pydicom
 ```     
-## 🗂 Project Structure 
-
-
-
 ## 💻 Requirements      
 Before running, install all dependencies:     
 ```bash
