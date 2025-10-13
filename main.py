@@ -255,8 +255,8 @@ class SliceViewLabel(QLabel):
         center_offset_y = (label_height - zoomed_height) / 2
 
         # Adjust position for pan offset
-        x_on_zoomed_image = pos.x() - center_offset_x + self.pan_offset_x
-        y_on_zoomed_image = pos.y() - center_offset_y + self.pan_offset_y
+        x_on_zoomed_image = pos.x() - center_offset_x - self.pan_offset_x  # CORRECTED
+        y_on_zoomed_image = pos.y() - center_offset_y - self.pan_offset_y  # CORRECTED
 
         norm_x = x_on_zoomed_image / zoomed_width
         norm_y = y_on_zoomed_image / zoomed_height
@@ -354,8 +354,8 @@ class SliceViewLabel(QLabel):
             center_offset_y = (label_height - zoomed_height) / 2
 
             # Calculate screen coordinates for crosshair based on normalized position, zoom, and pan
-            draw_x = int((self.normalized_crosshair_x * zoomed_width) + center_offset_x - self.pan_offset_x)
-            draw_y = int((self.normalized_crosshair_y * zoomed_height) + center_offset_y - self.pan_offset_y)
+            draw_x = int((self.normalized_crosshair_x * zoomed_width) + center_offset_x + self.pan_offset_x) # CORRECTED
+            draw_y = int((self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y) # CORRECTED
 
             colors = self.parent_viewer.view_colors
             h_color, v_color = None, None
