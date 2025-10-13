@@ -63,7 +63,8 @@ Use tools from the sidebar to:
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/0ed7c0efd7d05154d8f3640a1c143b9616fc6f04/assets/IMG_0410.gif)   
 💡 **Contrast** — adjust brightness and contrast levels.    
 ✂️ **Crop** — focus on a region of interest.       
-🎞 **Cine Mode** — play slices automatically like a short animation.        
+🎞 **Cine Mode** — play slices automatically like a short animation.
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/09e97cac40f461157c84ce14168445d3a77fd1a1/assets/IMG_0408.gif)
 4.**Switch View Modes**          
 Toggle between:     
 **Main View** — standard three-plane mode.    
