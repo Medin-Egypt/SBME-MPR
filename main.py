@@ -67,9 +67,10 @@ class SliceViewLabel(QLabel):
         self.cine_active = False
         self.cine_fps = 10  # Frames per second
 
+    # --- MODIFIED METHOD ---
     def _cine_next_slice(self):
-        """Advance to the previous slice in cine mode (going inward/zooming in)."""
-        if not self.cine_active:
+        """Advance to the previous slice in cine mode."""
+        if not self.cine_active or not self.parent_viewer.file_loaded:
             return
 
         current_slice = self.parent_viewer.slices[self.view_type]
@@ -85,8 +86,11 @@ class SliceViewLabel(QLabel):
 
         max_slice = self.parent_viewer.dims[max_dim_index]
         new_slice = (current_slice - 1) % max_slice
-        self.parent_viewer.slices[self.view_type] = new_slice
-        self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
+
+        # Call the new central method to update slice, crosshairs, and all views
+        self.parent_viewer.set_slice_from_scroll(self.view_type, new_slice)
+
+    # --- END MODIFIED METHOD ---
 
     def start_cine(self):
         """Start cine mode playback."""
@@ -100,7 +104,9 @@ class SliceViewLabel(QLabel):
             self.cine_active = False
             self.cine_timer.stop()
 
+    # --- MODIFIED METHOD ---
     def wheelEvent(self, event):
+        """Handle mouse wheel events for scrolling through slices or zooming."""
         slide_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_0")
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
 
@@ -115,17 +121,21 @@ class SliceViewLabel(QLabel):
                 event.accept()
                 return
 
-            # CHANGE 2: Call parent viewer to handle global synchronized zoom change
             self.parent_viewer.change_global_zoom(delta)
-
             event.accept()
+
         elif slide_btn and slide_btn.isChecked():
+            if not self.parent_viewer.file_loaded:
+                return
+
             delta = event.angleDelta().y()
             step = 1 if abs(delta) > 0 else 0
             direction = step * (-1 if delta > 0 else 1)
             if direction == 0:
                 return
+
             current_slice = self.parent_viewer.slices[self.view_type]
+
             if self.view_type in ('axial', 'oblique'):
                 max_dim_index = 2
             elif self.view_type == 'coronal':
@@ -134,13 +144,17 @@ class SliceViewLabel(QLabel):
                 max_dim_index = 0
             else:
                 return
+
             max_slice = self.parent_viewer.dims[max_dim_index]
             new_slice = (current_slice + direction) % max_slice
-            self.parent_viewer.slices[self.view_type] = new_slice
-            self.parent_viewer.update_view(self.ui_title.lower(), self.view_type)
+
+            # Call the new central method to update slice, crosshairs, and all views
+            self.parent_viewer.set_slice_from_scroll(self.view_type, new_slice)
             event.accept()
         else:
             super().wheelEvent(event)
+
+    # --- END MODIFIED METHOD ---
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -354,8 +368,10 @@ class SliceViewLabel(QLabel):
             center_offset_y = (label_height - zoomed_height) / 2
 
             # Calculate screen coordinates for crosshair based on normalized position, zoom, and pan
-            draw_x = int((self.normalized_crosshair_x * zoomed_width) + center_offset_x + self.pan_offset_x) # CORRECTED
-            draw_y = int((self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y) # CORRECTED
+            draw_x = int(
+                (self.normalized_crosshair_x * zoomed_width) + center_offset_x + self.pan_offset_x)  # CORRECTED
+            draw_y = int(
+                (self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y)  # CORRECTED
 
             colors = self.parent_viewer.view_colors
             h_color, v_color = None, None
@@ -789,10 +805,11 @@ class MPRViewer(QMainWindow):
     def reset_crosshair_and_slices(self):
         """Resets crosshairs to the center and slices to the middle."""
         self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
-        self.slices['axial'] = self.dims[2] // 2
-        self.slices['coronal'] = self.dims[1] // 2
-        self.slices['sagittal'] = self.dims[0] // 2
-        self.slices['oblique'] = self.dims[2] // 2
+        if self.dims:
+            self.slices['axial'] = self.dims[2] // 2
+            self.slices['coronal'] = self.dims[1] // 2
+            self.slices['sagittal'] = self.dims[0] // 2
+            self.slices['oblique'] = self.dims[2] // 2
 
     def reset_crop(self):
         """Resets the crop to show the full volume."""
@@ -829,6 +846,42 @@ class MPRViewer(QMainWindow):
             self.slices['coronal'] = int(norm_x * (self.dims[1] - 1))
 
         self.update_all_views()
+
+    # --- NEW METHOD ---
+    def set_slice_from_scroll(self, view_type, new_slice_index):
+        """
+        Updates a slice index from scrolling or cine mode, recalculates the
+        corresponding normalized coordinate for the crosshair, and updates all views.
+        """
+        if not self.file_loaded or self.dims is None:
+            return
+
+        self.slices[view_type] = new_slice_index
+
+        # If scrolling in oblique view, only update that view without syncing crosshairs
+        if view_type == 'oblique':
+            self.update_view('oblique', 'oblique')
+            return
+
+        # Update the corresponding normalized coordinate based on which view was scrolled
+        if view_type == 'axial':
+            # Scrolling through axial slices changes the Axial ('A') coordinate.
+            if self.dims[2] > 1:
+                # Based on `set_slice_from_crosshair`, the axial dimension is inverted.
+                self.norm_coords['A'] = 1.0 - (new_slice_index / (self.dims[2] - 1))
+        elif view_type == 'coronal':
+            # Scrolling through coronal slices changes the Coronal ('C') coordinate.
+            if self.dims[1] > 1:
+                self.norm_coords['C'] = new_slice_index / (self.dims[1] - 1)
+        elif view_type == 'sagittal':
+            # Scrolling through sagittal slices changes the Sagittal ('S') coordinate.
+            if self.dims[0] > 1:
+                self.norm_coords['S'] = new_slice_index / (self.dims[0] - 1)
+
+        # Update all views to reflect the new slice and the new crosshair positions
+        self.update_all_views()
+
+    # --- END NEW METHOD ---
 
     def finalize_crop(self, view_type, start_pos, end_pos, label_size):
         """Convert screen coordinates to normalized crop bounds and store them."""
