@@ -60,7 +60,7 @@ Move through slices using your mouse wheel or the cine playback controls.
 4.**Interact with the Images**       
 Use tools from the sidebar to:       
 🔍 **Zoom / Pan** — explore image details.   
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/6dfd3beb2047f8479e7db2012d35be732434784c/assets/ZoomPanResetMode.mp4)   
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/0ed7c0efd7d05154d8f3640a1c143b9616fc6f04/assets/IMG_0410.gif)   
 💡 **Contrast** — adjust brightness and contrast levels.    
 ✂️ **Crop** — focus on a region of interest.       
 🎞 **Cine Mode** — play slices automatically like a short animation.        
