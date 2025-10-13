@@ -504,6 +504,9 @@ class MPRViewer(QMainWindow):
         self.data = None
         self.affine = None
         self.dims = None
+
+        self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0)}
+
         self.intensity_min = 0
         self.intensity_max = 255
         self.file_loaded = False
@@ -596,6 +599,40 @@ class MPRViewer(QMainWindow):
             cine_btn.clicked.connect(self.handle_cine_button_toggle)
 
         self.show_main_views_initially()
+
+    def _calculate_pixel_dims(self):
+        """
+        Calculates the aspect-ratio-corrected pixel dimensions for axial,
+        coronal, and sagittal views based on voxel spacing.
+        This should be called once after a file is loaded.
+        """
+        if self.dims is None or self.affine is None:
+            self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0)}
+            return
+
+        # Voxel spacing from the affine matrix diagonal
+        # Assuming affine[0,0]=x, affine[1,1]=y, affine[2,2]=z spacing
+        x_spacing = self.affine[0, 0]
+        y_spacing = self.affine[1, 1]
+        z_spacing = self.affine[2, 2]
+
+        # Raw voxel counts from data shape (Sagittal, Coronal, Axial)
+        sag_vox, cor_vox, ax_vox = self.dims[0], self.dims[1], self.dims[2]
+
+        # Calculate Axial view dimensions (Sagittal x Coronal plane)
+        ax_w = sag_vox
+        ax_h = int(cor_vox * (y_spacing / x_spacing)) if x_spacing > 0 else cor_vox
+        self.pixel_dims['axial'] = (ax_w, ax_h)
+
+        # Calculate Coronal view dimensions (Sagittal x Axial plane)
+        cor_w = sag_vox
+        cor_h = int(ax_vox * (z_spacing / x_spacing)) if x_spacing > 0 else ax_vox
+        self.pixel_dims['coronal'] = (cor_w, cor_h)
+
+        # Calculate Sagittal view dimensions (Coronal x Axial plane)
+        sag_w = cor_vox
+        sag_h = int(ax_vox * (z_spacing / y_spacing)) if y_spacing > 0 else ax_vox
+        self.pixel_dims['sagittal'] = (sag_w, sag_h)
 
     def create_title_bar(self):
         """Create custom title bar with window controls"""
@@ -892,25 +929,21 @@ class MPRViewer(QMainWindow):
 
             view_type = 'coronal' if view_name == 'frontal' else view_name
 
-            # Determine the dimensions of the image slice for the current view type
-            # Assuming DIMS are (Sagittal, Coronal, Axial)
-            if view_type == 'axial' or view_type == 'oblique':
-                img_w, img_h = self.dims[0], self.dims[1]  # Sagittal (x), Coronal (y)
-            elif view_type == 'coronal':
-                img_w, img_h = self.dims[0], self.dims[2]  # Sagittal (x), Axial (y)
-            elif view_type == 'sagittal':
-                img_w, img_h = self.dims[1], self.dims[2]  # Coronal (x), Axial (y)
-            else:
-                continue
+            # --- SIMPLIFIED LOGIC ---
+            # Get pre-calculated, aspect-ratio-corrected dimensions
+            if view_type in self.pixel_dims:
+                img_w, img_h = self.pixel_dims[view_type]
+            else:  # Fallback for oblique or other views
+                img_w, img_h = self.pixel_dims['axial']
 
-            # Calculate the scaling factor needed for this view
-            scale_w = label.width() / img_w
-            scale_h = label.height() / img_h
-            current_scale = min(scale_w, scale_h)
+                # Calculate the scaling factor needed for this view
+            if img_w > 0 and img_h > 0:
+                scale_w = label.width() / img_w
+                scale_h = label.height() / img_h
+                current_scale = min(scale_w, scale_h)
+                min_scale = min(min_scale, current_scale)
 
-            min_scale = min(min_scale, current_scale)
-
-        self.default_scale_factor = max(1.0, min_scale)  # Never scale down smaller than original size
+        self.default_scale_factor = min_scale
 
     def update_all_views(self):
         views_to_update = []
@@ -937,6 +970,8 @@ class MPRViewer(QMainWindow):
                 self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data(
                     file_path)
                 self.file_loaded = True
+
+                self._calculate_pixel_dims()
 
                 # Store original contrast values on load
                 self.original_intensity_min = self.intensity_min
@@ -965,6 +1000,8 @@ class MPRViewer(QMainWindow):
                     folder_path)
                 self.file_loaded = True
 
+                self._calculate_pixel_dims()
+
                 # Store original contrast values on load
                 self.original_intensity_min = self.intensity_min
                 self.original_intensity_max = self.intensity_max
@@ -990,6 +1027,8 @@ class MPRViewer(QMainWindow):
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
+                import traceback
+                print(traceback.print_exc())
 
     def handle_cine_button_toggle(self, checked):
         if not checked:
