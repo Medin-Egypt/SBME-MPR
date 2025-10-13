@@ -18,13 +18,56 @@ class SliceCropDialog(QDialog):
     def __init__(self, max_slice_count, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Crop Slices")
-
-        # Dialog layout
-        layout = QVBoxLayout(self)
+        
+        # Remove default title bar
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        
+        # Main container
+        main_container = QWidget()
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Custom title bar
+        title_bar = QWidget()
+        title_bar.setObjectName("dialog_title_bar")
+        title_bar.setFixedHeight(35)
+        title_bar_layout = QHBoxLayout(title_bar)
+        title_bar_layout.setContentsMargins(0, 0, 0, 0)
+        title_bar_layout.setSpacing(0)
+        
+        # Title label
+        title_label = QLabel("Crop Slices")
+        title_label.setObjectName("dialog_title_label")
+        title_bar_layout.addWidget(title_label)
+        title_bar_layout.addStretch()
+        
+        # Close button
+        close_btn = QPushButton()
+        close_btn.setObjectName("dialog_close_btn")
+        close_btn.setIcon(QIcon("Icons/cross.png"))
+        close_btn.setIconSize(QSize(16, 16))
+        close_btn.setFixedSize(40, 35)
+        close_btn.clicked.connect(self.reject)
+        title_bar_layout.addWidget(close_btn)
+        
+        # Enable dragging
+        self.drag_position = None
+        title_bar.mousePressEvent = self.title_bar_mouse_press
+        title_bar.mouseMoveEvent = self.title_bar_mouse_move
+        
+        main_layout.addWidget(title_bar)
+        
+        # Content area
+        content_widget = QWidget()
+        content_widget.setObjectName("dialog_content")
+        layout = QVBoxLayout(content_widget)
+        layout.setContentsMargins(20, 20, 20, 20)
         form_layout = QFormLayout()
 
         # Information label
         info_label = QLabel(f"This file has {max_slice_count} slices.")
+        info_label.setObjectName("dialog_info_label")
         layout.addWidget(info_label)
 
         # Spinboxes for start and end slices
@@ -47,7 +90,22 @@ class SliceCropDialog(QDialog):
         button_box.rejected.connect(self.reject)
 
         layout.addWidget(button_box)
-        self.setLayout(layout)
+        main_layout.addWidget(content_widget)
+        
+        self.setLayout(main_layout)
+        self.setMinimumWidth(400)
+
+    def title_bar_mouse_press(self, event):
+        """Handle mouse press on title bar for dragging"""
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def title_bar_mouse_move(self, event):
+        """Handle mouse move on title bar for dragging"""
+        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
 
     def get_values(self):
         """Returns the selected start and end slices."""
