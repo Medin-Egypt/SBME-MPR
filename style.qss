@@ -6,43 +6,49 @@ QWidget {
     font-size: 14px;
 }
 
+/* --- Main Window Styling --- */
+QMainWindow {
+    background-color: #1A202C;
+}
+
 /* --- Custom Title Bar Styling --- */
 QWidget#custom_title_bar {
-    background-color: #2D3748;
-    border-bottom: 2px solid #4A5568;
+    background-color: #0F1419;  /* Darker than main background */
+    border-bottom: 1px solid #2D3748;
+    min-height: 35px;
+    max-height: 35px;
 }
 
 QLabel#title_label {
     color: #63B3ED;
     background-color: transparent;
     border: none;
+    font-size: 14px;
+    font-weight: bold;
+    padding-left: 10px;
 }
 
 QPushButton#minimize_btn,
-QPushButton#maximize_btn {
+QPushButton#maximize_btn,
+QPushButton#restore_btn,
+QPushButton#close_btn {
     background-color: transparent;
-    color: #E2E8F0;
     border: none;
-    font-size: 20px;
-    font-weight: bold;
+    min-width: 40px;
+    max-width: 40px;
+    min-height: 35px;
+    max-height: 35px;
+    padding: 0px;
 }
 
 QPushButton#minimize_btn:hover,
-QPushButton#maximize_btn:hover {
-    background-color: #4A5568;
-}
-
-QPushButton#close_btn {
-    background-color: transparent;
-    color: #E2E8F0;
-    border: none;
-    font-size: 24px;
-    font-weight: bold;
+QPushButton#maximize_btn:hover,
+QPushButton#restore_btn:hover {
+    background-color: #2D3748;
 }
 
 QPushButton#close_btn:hover {
     background-color: #F56565;
-    color: white;
 }
 
 /* --- ScrollBar Styling --- */
@@ -64,8 +70,8 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 /* --- Group Box Styling --- */
 QGroupBox {
     font-weight: bold;
-    border: 2px solid #2D3748;
-    border-radius: 50px;
+    border: 2px solid #4A5568;  /* Change this value to adjust all section borders */
+    border-radius: 8px;
     margin-top: 15px;
     padding-top: 10px;
     background-color: #2D3748;
@@ -92,10 +98,11 @@ QPushButton {
 QPushButton:hover {
     background-color: #63B3ED;
     color: #1A202C;
+    border: 1px solid #63B3ED;
 }
 
 QPushButton:pressed {
-    background-color: #4A5568;
+    background-color: #3182CE;
     border: 1px solid #63B3ED;
 }
 
@@ -107,7 +114,7 @@ QPushButton:checked {
 
 /* --- Specific Button Styling (Load/Export) --- */
 QPushButton[objectName^="open_btn_"] {
-    background-color: #4A5568;
+    background-color: #2D3748;
     border: 1px solid #63B3ED;
     color: #63B3ED;
 }
@@ -115,10 +122,11 @@ QPushButton[objectName^="open_btn_"] {
 QPushButton[objectName^="open_btn_"]:hover {
     background-color: #63B3ED;
     color: #1A202C;
+    border: 1px solid #63B3ED;
 }
 
 QPushButton[objectName^="export_btn_"] {
-    background-color: #4A5568;
+    background-color: #2D3748;
     border: 1px solid #F56565;
     color: #F56565;
 }
@@ -126,36 +134,40 @@ QPushButton[objectName^="export_btn_"] {
 QPushButton[objectName^="export_btn_"]:hover {
     background-color: #F56565;
     color: #1A202C;
+    border: 1px solid #F56565;
 }
 
 QPushButton[objectName^="export_btn_"]:checked {
     background-color: #F56565;
     color: #1A202C;
+    border: 1px solid #F56565;
 }
 
 /* --- Frame and Panel Styling --- */
 QFrame {
     background-color: #2D3748;
-    border: 1px solid #4A5568;
+    border: none;
     border-radius: 5px;
 }
 
 /* Main window background frame */
 QFrame#sidebar {
     background-color: #1A202C;
-    border: 2px solid #2D3748;
+    border: 1px solid #2D3748;
+    border-radius: 8px;
 }
 
 /* Styles for the main viewing area panels */
 QFrame[objectName^="viewing_panel_"] {
     background-color: #2D3748;
-    border: 2px solid #4A5568;
+    border: 1px solid #4A5568;
+    border-radius: 8px;
 }
 
 /* Styles for the view labels (where the images are shown) */
 QLabel[objectName^="view_"] {
     background-color: black;
-    border: 1px solid #4A5568;
+    border: none;
     color: #4A5568;
     font-size: 18px;
 }
@@ -165,4 +177,6 @@ QLabel[objectName^="view_title_"] {
     color: #E2E8F0;
     font-size: 16px;
     font-weight: bold;
+    background-color: transparent;
+    border: none;
 }

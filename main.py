@@ -433,6 +433,9 @@ class MPRViewer(QMainWindow):
         self.setMinimumSize(800, 600)
         self.setMaximumSize(16777215, 16777215)
         
+        # Remove default title bar
+        self.setWindowFlags(Qt.FramelessWindowHint)
+        
         self.view_colors = {
             'axial': QColor(100, 220, 100),    # Green
             'coronal': QColor(100, 150, 255), # Blue
@@ -470,10 +473,25 @@ class MPRViewer(QMainWindow):
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
+        
+        # Track window dragging
+        self.drag_position = None
+        self.is_maximized = False
 
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-        main_layout = QHBoxLayout(self.central_widget)
+        # Create main container widget
+        container = QWidget()
+        self.setCentralWidget(container)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        
+        # Create custom title bar
+        title_bar = self.create_title_bar()
+        container_layout.addWidget(title_bar)
+        
+        # Create content widget
+        content_widget = QWidget()
+        main_layout = QHBoxLayout(content_widget)
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
 
@@ -482,8 +500,12 @@ class MPRViewer(QMainWindow):
 
         main_layout.addWidget(sidebar)
         main_layout.addWidget(self.viewing_area_widget)
+        main_layout.addWidget(sidebar)
+        main_layout.addWidget(self.viewing_area_widget)
         main_layout.setStretch(0, 0)
         main_layout.setStretch(1, 1)
+        
+        container_layout.addWidget(content_widget)
 
         self.add_image_to_button("mode_btn_0", "Icons/windows.png", "3 Main Views")
         self.add_image_to_button("mode_btn_1", "Icons/heart.png", "Segmentation View")
@@ -505,13 +527,94 @@ class MPRViewer(QMainWindow):
         if default_tool:
             default_tool.setChecked(True)
         
-        self.centralWidget().installEventFilter(self)
+        content_widget.installEventFilter(self)
         
         cine_btn = self.findChild(QPushButton, "tool_btn_1_2")
         if cine_btn:
             cine_btn.clicked.connect(self.handle_cine_button_toggle)
             
         self.show_main_views_initially()
+
+    def create_title_bar(self):
+        """Create custom title bar with window controls"""
+        title_bar = QWidget()
+        title_bar.setObjectName("custom_title_bar")
+        title_bar.setFixedHeight(35)
+        
+        layout = QHBoxLayout(title_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Title label
+        title_label = QLabel("MPR VIEWER")
+        title_label.setObjectName("title_label")
+        layout.addWidget(title_label)
+        
+        layout.addStretch()
+        
+        # Minimize button
+        minimize_btn = QPushButton()
+        minimize_btn.setObjectName("minimize_btn")
+        minimize_btn.setIcon(QIcon("Icons/window-minimize.png"))
+        minimize_btn.setIconSize(QSize(16, 16))
+        minimize_btn.clicked.connect(self.showMinimized)
+        layout.addWidget(minimize_btn)
+        
+        # Maximize/Restore button
+        self.maximize_btn = QPushButton()
+        self.maximize_btn.setObjectName("maximize_btn")
+        self.maximize_btn.setIcon(QIcon("Icons/window-maximize.png"))
+        self.maximize_btn.setIconSize(QSize(16, 16))
+        self.maximize_btn.clicked.connect(self.toggle_maximize)
+        layout.addWidget(self.maximize_btn)
+        
+        # Close button
+        close_btn = QPushButton()
+        close_btn.setObjectName("close_btn")
+        close_btn.setIcon(QIcon("Icons/cross.png"))
+        close_btn.setIconSize(QSize(16, 16))
+        close_btn.clicked.connect(self.close)
+        layout.addWidget(close_btn)
+        
+        # Enable dragging on title bar
+        title_bar.mousePressEvent = self.title_bar_mouse_press
+        title_bar.mouseMoveEvent = self.title_bar_mouse_move
+        title_bar.mouseDoubleClickEvent = self.title_bar_double_click
+        
+        return title_bar
+    
+    def title_bar_mouse_press(self, event):
+        """Handle mouse press on title bar for dragging"""
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+    
+    def title_bar_mouse_move(self, event):
+        """Handle mouse move on title bar for dragging"""
+        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
+            if self.is_maximized:
+                # Restore window when dragging from maximized state
+                self.toggle_maximize()
+                # Adjust drag position for restored window size
+                self.drag_position = QPoint(self.width() // 2, 10)
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+    
+    def title_bar_double_click(self, event):
+        """Handle double click on title bar to maximize/restore"""
+        if event.button() == Qt.LeftButton:
+            self.toggle_maximize()
+    
+    def toggle_maximize(self):
+        """Toggle between maximized and normal window state"""
+        if self.is_maximized:
+            self.showNormal()
+            self.is_maximized = False
+            self.maximize_btn.setIcon(QIcon("Icons/window-maximize.png"))
+        else:
+            self.showMaximized()
+            self.is_maximized = True
+            self.maximize_btn.setIcon(QIcon("Icons/browsers.png"))
 
     # --- Reset logic methods ---
     
@@ -752,7 +855,7 @@ class MPRViewer(QMainWindow):
                     label.stop_cine()
 
     def eventFilter(self, obj, event):
-        if obj == self.centralWidget() and event.type() == QEvent.Resize:
+        if event.type() == QEvent.Resize:
             if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
                 if not hasattr(self, '_resize_timer'):
                     self._resize_timer = QTimer()
