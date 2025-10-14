@@ -1,5 +1,7 @@
 import tensorflow as tf
+import os
 import sys
+import nibabel as nib
 import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
@@ -146,6 +148,9 @@ class MPRViewer(QMainWindow):
         # Crop bounds (normalized 0-1 coordinates)
         self.crop_bounds = None
         self.original_data = None
+        self.segmentation_files = []  # List of loaded segmentation file paths
+        self.segmentation_data_list = []  # List of numpy arrays for each segmentation
+        self.segmentation_visible = False  # Whether to show segmentation overlays
 
         self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
 
@@ -658,6 +663,64 @@ class MPRViewer(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
                 import traceback
                 print(traceback.print_exc())
+    
+    def load_segmentation_files(self):
+        """Opens a file dialog to select multiple NIfTI segmentation files."""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, 
+            "Select Segmentation Files", 
+            "",
+            "NIfTI Files (*.nii *.nii.gz);;All Files (*)"
+        )
+        
+        if not file_paths:
+            return
+        
+        if not self.file_loaded:
+            QMessageBox.warning(self, "No Data", "Please load a main file first.")
+            return
+        
+        # Clear existing segmentations
+        self.segmentation_files = []
+        self.segmentation_data_list = []
+        
+        # Load each segmentation file
+        for file_path in file_paths:
+            try:
+                nifti_file = nib.load(file_path)
+                seg_data = nifti_file.get_fdata()
+                
+                # Apply the same flip as the main data
+                seg_data = seg_data[::-1, :, :]
+                
+                # Check if dimensions match
+                if seg_data.shape != self.data.shape:
+                    QMessageBox.warning(
+                        self, 
+                        "Dimension Mismatch", 
+                        f"Segmentation file {os.path.basename(file_path)} has different dimensions.\n"
+                        f"Expected: {self.data.shape}, Got: {seg_data.shape}"
+                    )
+                    continue
+                
+                self.segmentation_files.append(file_path)
+                self.segmentation_data_list.append(seg_data)
+                
+            except Exception as e:
+                QMessageBox.critical(
+                    self, 
+                    "Error", 
+                    f"Failed to load segmentation file {os.path.basename(file_path)}:\n{str(e)}"
+                )
+        
+        if self.segmentation_data_list:
+            self.segmentation_visible = True
+            self.update_all_views()
+            QMessageBox.information(
+                self, 
+                "Success", 
+                f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
+            )
 
     def handle_cine_button_toggle(self, checked):
         if not checked:
@@ -682,6 +745,71 @@ class MPRViewer(QMainWindow):
         h, w = array_2d.shape
         q_img = QImage(array_2d.tobytes(), w, h, w, QImage.Format_Grayscale8)
         return QPixmap.fromImage(q_img)
+
+    def add_segmentation_overlay(self, base_pixmap, view_type):
+        """Adds red outline overlay from segmentation data to the pixmap."""
+        from PyQt5.QtGui import QPainter, QPen
+        
+        # Convert pixmap to QImage for painting
+        image = base_pixmap.toImage()
+        painter = QPainter(image)
+        pen = QPen(QColor(255, 0, 0), 2)  # Red color, 2px width
+        painter.setPen(pen)
+        
+        # Get the current slice for this view
+        if view_type == 'axial':
+            slice_idx = self.slices['axial']
+        elif view_type == 'coronal':
+            slice_idx = self.slices['coronal']
+        elif view_type == 'sagittal':
+            slice_idx = self.slices['sagittal']
+        elif view_type == 'oblique':
+            # For oblique, we'll skip segmentation overlay for now
+            painter.end()
+            return QPixmap.fromImage(image)
+        else:
+            painter.end()
+            return base_pixmap
+        
+        # Process each loaded segmentation
+        for seg_data in self.segmentation_data_list:
+            # Extract the slice from segmentation data
+            if view_type == 'axial':
+                seg_slice = seg_data[:, :, slice_idx]
+                seg_slice = np.flipud(np.rot90(seg_slice))
+            elif view_type == 'coronal':
+                seg_slice = seg_data[:, slice_idx, :]
+                seg_slice = np.rot90(seg_slice)
+            elif view_type == 'sagittal':
+                seg_slice = seg_data[slice_idx, :, :]
+                seg_slice = np.rot90(seg_slice)
+            
+            # Find edges/contours in the segmentation
+            from scipy import ndimage
+            
+            # Create binary mask
+            mask = seg_slice > 0.5
+            
+            if not mask.any():
+                continue
+            
+            # Find edges using morphological operations
+            eroded = ndimage.binary_erosion(mask)
+            edges = mask & ~eroded
+            
+            # Scale factor to match pixmap size
+            scale_y = base_pixmap.height() / edges.shape[0]
+            scale_x = base_pixmap.width() / edges.shape[1]
+            
+            # Draw the edges
+            edge_coords = np.argwhere(edges)
+            for y, x in edge_coords:
+                scaled_x = int(x * scale_x)
+                scaled_y = int(y * scale_y)
+                painter.drawPoint(scaled_x, scaled_y)
+        
+        painter.end()
+        return QPixmap.fromImage(image)
 
     def update_view(self, ui_title: str, view_type: str, sync_crosshair=False):
         if ui_title not in self.view_labels:
@@ -720,6 +848,9 @@ class MPRViewer(QMainWindow):
         # This is a simplification. A proper MPR would handle image size based on voxel size.
         # For now, we will create the pixmap from the raw slice and let SliceViewLabel handle scaling.
         pixmap = self.numpy_to_qpixmap(slice_data)
+
+        if self.segmentation_visible and self.segmentation_data_list and view_type != 'segmentation':
+          pixmap = self.add_segmentation_overlay(pixmap, view_type)
 
         if isinstance(label, SliceViewLabel):
             # Ensure the label's zoom factor is synchronized
@@ -834,6 +965,7 @@ class MPRViewer(QMainWindow):
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
+        self.segmentation_visible = True if self.segmentation_data_list else False
 
         self.findChild(QPushButton, "mode_btn_2").setChecked(False)
         self.findChild(QPushButton, "mode_btn_1").setChecked(False)
@@ -856,6 +988,7 @@ class MPRViewer(QMainWindow):
         self.oblique_view_enabled = True
         self.main_views_enabled = False
         self.segmentation_view_enabled = False
+        self.segmentation_visible = True if self.segmentation_data_list else False
 
         self.findChild(QPushButton, "mode_btn_0").setChecked(False)
         self.findChild(QPushButton, "mode_btn_1").setChecked(False)
@@ -882,6 +1015,7 @@ class MPRViewer(QMainWindow):
         self.segmentation_view_enabled = True
         self.main_views_enabled = False
         self.oblique_view_enabled = False
+        self.segmentation_visible = False  # Hide overlays in segmentation view mode
 
         self.findChild(QPushButton, "mode_btn_0").setChecked(False)
         self.findChild(QPushButton, "mode_btn_2").setChecked(False)
@@ -904,7 +1038,7 @@ class MPRViewer(QMainWindow):
         sidebar.setFrameStyle(QFrame.Box)
         sidebar.setFixedWidth(200)
 
-        layout = QVBoxLayout(sidebar)
+        layout = QVBoxLayout(sidebar)  # This line MUST be here at the beginning
         layout.setSpacing(20)
         layout.setContentsMargins(10, 10, 10, 10)
 
@@ -927,7 +1061,9 @@ class MPRViewer(QMainWindow):
         layout.addWidget(file_group)
 
         mode_group = QGroupBox("Mode:")
-        mode_layout = QGridLayout()
+        mode_layout = QVBoxLayout()
+        mode_buttons_widget = QWidget()
+        mode_buttons_layout = QGridLayout(mode_buttons_widget)
         self.mode_group_buttons = QButtonGroup(self)
         self.mode_group_buttons.setExclusive(False)
         for i in range(3):
@@ -935,7 +1071,7 @@ class MPRViewer(QMainWindow):
             btn.setFixedSize(40, 40)
             btn.setObjectName(f"mode_btn_{i}")
             btn.setCheckable(True)
-            mode_layout.addWidget(btn, 0, i)
+            mode_buttons_layout.addWidget(btn, 0, i)
             self.mode_group_buttons.addButton(btn, i)
             if i == 0:
                 btn.clicked.connect(self.toggle_main_views)
@@ -943,8 +1079,23 @@ class MPRViewer(QMainWindow):
                 btn.clicked.connect(self.toggle_segmentation_view)
             elif i == 2:
                 btn.clicked.connect(self.toggle_oblique_view)
+
+        mode_layout.addWidget(mode_buttons_widget)
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
+
+        # Add Segmentation section
+        seg_group = QGroupBox("Segmentation:")
+        seg_layout = QVBoxLayout()
+
+        load_seg_btn = QPushButton("Load Segmentation")
+        load_seg_btn.setObjectName("load_seg_btn")
+        load_seg_btn.setMinimumHeight(35)
+        load_seg_btn.clicked.connect(self.load_segmentation_files)
+        seg_layout.addWidget(load_seg_btn)
+
+        seg_group.setLayout(seg_layout)
+        layout.addWidget(seg_group)
 
         tools_group = QGroupBox("Tools:")
         tools_main_layout = QVBoxLayout()
