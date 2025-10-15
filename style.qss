@@ -112,14 +112,20 @@ QPushButton:checked {
     color: #1A202C;
 }
 
-/* --- Specific Button Styling (Load/Export) --- */
-QPushButton[objectName^="open_btn_"] {
+/* --- Specific Button Styling (Load/Export/Reset/Segmentation) --- */
+QPushButton[objectName^="open_btn_"],
+QPushButton[objectName="load_seg_btn"],
+QPushButton[objectName="delete_seg_btn"],
+QPushButton[objectName="reset_btn"] {
     background-color: #2D3748;
     border: 1px solid #63B3ED;
     color: #63B3ED;
 }
 
-QPushButton[objectName^="open_btn_"]:hover {
+QPushButton[objectName^="open_btn_"]:hover,
+QPushButton[objectName="load_seg_btn"]:hover,
+QPushButton[objectName="delete_seg_btn"]:hover,
+QPushButton[objectName="reset_btn"]:hover {
     background-color: #63B3ED;
     color: #1A202C;
     border: 1px solid #63B3ED;

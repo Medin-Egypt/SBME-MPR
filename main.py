@@ -1230,6 +1230,7 @@ class MPRViewer(QMainWindow):
 
         # Add the Reset button
         reset_btn = QPushButton("Reset")
+        reset_btn.setObjectName("reset_btn")
         reset_btn.setMinimumHeight(35)
         reset_btn.clicked.connect(self.on_reset_clicked)
         tools_main_layout.addWidget(reset_btn)
