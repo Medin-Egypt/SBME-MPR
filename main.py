@@ -129,6 +129,7 @@ class MPRViewer(QMainWindow):
             'axial': QColor(100, 220, 100),  # Green
             'coronal': QColor(100, 150, 255),  # Blue
             'sagittal': QColor(255, 100, 100),  # Red
+            'oblique': QColor(255, 255, 100),  # Yellow
         }
 
         self.data = None
@@ -176,7 +177,11 @@ class MPRViewer(QMainWindow):
         # NEW properties for coordinated scaling/zooming
         self.global_zoom_factor = 1.0
         self.default_scale_factor = 1.0
-
+        # Oblique axis properties
+        self.oblique_axis_visible = False
+        self.oblique_axis_angle = 0  # Default angle in degrees
+        self.oblique_axis_dragging = False
+        self.oblique_axis_handle_size = 10  # Size of draggable handle
         # Create main container widget
         container = QWidget()
         self.setCentralWidget(container)
@@ -278,7 +283,7 @@ class MPRViewer(QMainWindow):
         layout.setSpacing(0)
 
         # Title label
-        title_label = QLabel("MPR VIEWER")
+        title_label = QLabel("SBME29 MPR")
         title_label.setObjectName("title_label")
         layout.addWidget(title_label)
 
@@ -458,9 +463,10 @@ class MPRViewer(QMainWindow):
         self.intensity_max = self.original_intensity_max
 
     def reset_rotation(self):
-        """Resets the oblique rotation angles to zero."""
+        """Resets the oblique rotation angles to default."""
         self.rot_x_deg = 0
         self.rot_y_deg = 0
+        self.oblique_axis_angle = 0  # Reset to default angle
 
     def reset_crosshair_and_slices(self):
         """Resets crosshairs to the center and slices to the middle."""
@@ -505,8 +511,26 @@ class MPRViewer(QMainWindow):
             self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
             self.slices['coronal'] = int(norm_x * (self.dims[1] - 1))
 
+
         self.update_all_views()
 
+
+    def update_oblique_from_crosshair(self):
+        """Update the oblique view slice based on the current crosshair position."""
+        if not self.file_loaded or self.dims is None:
+            return
+        
+        if not self.oblique_view_enabled:
+            return
+        
+        # Use the axial coordinate to determine the oblique slice
+        # This makes the oblique view follow the crosshair position
+        self.slices['oblique'] = self.slices['axial']
+        
+        # Update only the oblique view
+        self.update_view('oblique', 'oblique')
+
+    
     # --- NEW METHOD ---
     def set_slice_from_scroll(self, view_type, new_slice_index):
         """
@@ -728,6 +752,12 @@ class MPRViewer(QMainWindow):
                 if isinstance(label, SliceViewLabel):
                     label.stop_cine()
 
+    def handle_rotate_mode_toggle(self, checked):
+        """Show/hide oblique axis based on rotate mode and current view"""
+        if self.oblique_view_enabled:
+            # Just update the view to show/hide the axis based on rotate mode
+            self.update_view('frontal', 'coronal', sync_crosshair=True)
+
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Resize:
             if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
@@ -829,7 +859,8 @@ class MPRViewer(QMainWindow):
             self.data, self.dims, self.slices, self.affine,
             self.intensity_min, self.intensity_max,
             rot_x_deg=self.rot_x_deg, rot_y_deg=self.rot_y_deg,
-            view_type=view_type
+            view_type=view_type,
+            norm_coords=self.norm_coords  # Pass normalized coordinates
         )
 
         # Determine the target size for the unscaled image pixmap
@@ -850,7 +881,7 @@ class MPRViewer(QMainWindow):
         pixmap = self.numpy_to_qpixmap(slice_data)
 
         if self.segmentation_visible and self.segmentation_data_list and view_type != 'segmentation':
-          pixmap = self.add_segmentation_overlay(pixmap, view_type)
+            pixmap = self.add_segmentation_overlay(pixmap, view_type)
 
         if isinstance(label, SliceViewLabel):
             # Ensure the label's zoom factor is synchronized
@@ -868,12 +899,30 @@ class MPRViewer(QMainWindow):
                     norm_x, norm_y = 0.5, 0.5
 
                 label.set_normalized_crosshair(norm_x, norm_y)
+            
+            if view_type == 'coronal' and self.oblique_view_enabled:
+                label.oblique_axis_angle = self.oblique_axis_angle
+                label.oblique_axis_visible = self.oblique_axis_visible
+            else:
+                label.oblique_axis_visible = False
         else:
             scaled = pixmap.scaled(
                 QSize(label.size().width() - 2, label.size().height() - 2),
                 Qt.KeepAspectRatio, Qt.SmoothTransformation
             )
             label.setPixmap(scaled)
+
+    def draw_oblique_axis(self, label, view_type):
+        """Draw the oblique axis on the frontal view"""
+        if view_type != 'coronal' or not self.oblique_axis_visible:
+            return
+        
+        if not isinstance(label, SliceViewLabel):
+            return
+        
+        label.oblique_axis_angle = self.oblique_axis_angle
+        label.oblique_axis_visible = True
+        label.update()
 
     def update_segmentation_view(self):
         if 'segmentation' in self.view_labels:
@@ -989,6 +1038,9 @@ class MPRViewer(QMainWindow):
         self.main_views_enabled = False
         self.segmentation_view_enabled = False
         self.segmentation_visible = True if self.segmentation_data_list else False
+
+        # Always show oblique axis in oblique view mode
+        self.oblique_axis_visible = True
 
         self.findChild(QPushButton, "mode_btn_0").setChecked(False)
         self.findChild(QPushButton, "mode_btn_1").setChecked(False)
@@ -1121,6 +1173,10 @@ class MPRViewer(QMainWindow):
                     btn.setCheckable(True)
                     self.tools_group_buttons.addButton(btn, r * 3 + c)
 
+        rotate_btn = self.findChild(QPushButton, "tool_btn_1_1")
+        if rotate_btn:
+            rotate_btn.clicked.connect(self.handle_rotate_mode_toggle)
+        
         tools_main_layout.addWidget(tools_grid_widget)
 
         # Add the Reset button

@@ -53,6 +53,11 @@ class SliceViewLabel(QLabel):
         self.cine_timer.timeout.connect(self._cine_next_slice)
         self.cine_active = False
         self.cine_fps = 10  # Frames per second
+        self.oblique_axis_visible = False
+        self.oblique_axis_angle = 0
+        self.oblique_axis_dragging = False
+        self.oblique_axis_start_angle = 0
+        self.oblique_axis_drag_start_pos = None
 
     # --- MODIFIED METHOD ---
     def _cine_next_slice(self):
@@ -156,7 +161,57 @@ class SliceViewLabel(QLabel):
         contrast_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_1")
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
+        rotate_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_1")
         cine_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_2")
+
+        # Check for oblique axis interaction first (highest priority in rotate mode)
+        if (rotate_btn and rotate_btn.isChecked() and 
+            self.oblique_axis_visible and 
+            self.view_type == 'coronal' and 
+            event.button() == Qt.LeftButton):
+            
+            # Calculate crosshair screen position
+            label_width = self.width()
+            label_height = self.height()
+            
+            default_scale = self.parent_viewer.default_scale_factor if hasattr(self.parent_viewer, 'default_scale_factor') else 1.0
+            combined_zoom_factor = default_scale * self.parent_viewer.global_zoom_factor
+            
+            if self._original_pixmap and not self._original_pixmap.isNull():
+                original_img_w = self._original_pixmap.width()
+                original_img_h = self._original_pixmap.height()
+                
+                zoomed_width = int(original_img_w * combined_zoom_factor)
+                zoomed_height = int(original_img_h * combined_zoom_factor)
+                
+                center_offset_x = (label_width - zoomed_width) / 2
+                center_offset_y = (label_height - zoomed_height) / 2
+                
+                # Calculate crosshair position (center of oblique axis)
+                center_x = int((self.normalized_crosshair_x * zoomed_width) + center_offset_x + self.pan_offset_x)
+                center_y = int((self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y)
+            else:
+                center_x = self.width() / 2
+                center_y = self.height() / 2
+            
+            length = min(self.width(), self.height()) * 0.4
+            
+            import math
+            angle_rad = math.radians(self.oblique_axis_angle)
+            handle_x = center_x + length * math.cos(angle_rad)
+            handle_y = center_y - length * math.sin(angle_rad)
+            
+            # Check distance to handle
+            dx = event.x() - handle_x
+            dy = event.y() - handle_y
+            distance = math.sqrt(dx*dx + dy*dy)
+            
+            if distance < 30:  # Click tolerance
+                self.oblique_axis_dragging = True
+                self.oblique_axis_drag_start_pos = event.pos()
+                self.oblique_axis_start_angle = self.oblique_axis_angle
+                event.accept()
+                return
 
         if crosshair_tool_btn and crosshair_tool_btn.isChecked() and event.button() == Qt.LeftButton:
             self._dragging_crosshair = True
@@ -180,6 +235,54 @@ class SliceViewLabel(QLabel):
     def mouseMoveEvent(self, event):
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
+
+        # Handle oblique axis dragging first
+        if self.oblique_axis_dragging:
+            # Calculate crosshair screen position as the rotation center
+            label_width = self.width()
+            label_height = self.height()
+            
+            default_scale = self.parent_viewer.default_scale_factor if hasattr(self.parent_viewer, 'default_scale_factor') else 1.0
+            combined_zoom_factor = default_scale * self.parent_viewer.global_zoom_factor
+            
+            if self._original_pixmap and not self._original_pixmap.isNull():
+                original_img_w = self._original_pixmap.width()
+                original_img_h = self._original_pixmap.height()
+                
+                zoomed_width = int(original_img_w * combined_zoom_factor)
+                zoomed_height = int(original_img_h * combined_zoom_factor)
+                
+                center_offset_x = (label_width - zoomed_width) / 2
+                center_offset_y = (label_height - zoomed_height) / 2
+                
+                # Use crosshair as rotation center
+                center_x = (self.normalized_crosshair_x * zoomed_width) + center_offset_x + self.pan_offset_x
+                center_y = (self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y
+            else:
+                center_x = self.width() / 2
+                center_y = self.height() / 2
+            
+            import math
+            # Calculate angle from center to current mouse position
+            dx = event.x() - center_x
+            dy = center_y - event.y()  # Inverted Y
+            angle = math.degrees(math.atan2(dy, dx))
+            
+            # Normalize angle to 0-360 range
+            if angle < 0:
+                angle += 360
+            
+            # Update angle
+            self.oblique_axis_angle = angle
+            self.parent_viewer.oblique_axis_angle = self.oblique_axis_angle
+            
+            # Update oblique view with new rotation
+            self.parent_viewer.rot_y_deg = self.oblique_axis_angle
+            self.parent_viewer.update_view('oblique', 'oblique')
+            
+            self.update()
+            event.accept()
+            return
 
         if self._dragging_crosshair:
             self._update_crosshair(event.pos())
@@ -212,6 +315,11 @@ class SliceViewLabel(QLabel):
 
     def mouseReleaseEvent(self, event):
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
+
+        if self.oblique_axis_dragging and event.button() == Qt.LeftButton:
+            self.oblique_axis_dragging = False
+            event.accept()
+            return
 
         if self._dragging_crosshair and event.button() == Qt.LeftButton:
             self._dragging_crosshair = False
@@ -270,6 +378,7 @@ class SliceViewLabel(QLabel):
         super().paintEvent(event)
 
         crop_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_0")
+        rotate_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_1")
 
         if self.parent_viewer.file_loaded and self._original_pixmap and not self._original_pixmap.isNull():
             painter = QPainter(self)
@@ -294,9 +403,9 @@ class SliceViewLabel(QLabel):
 
             # Calculate screen coordinates for crosshair based on normalized position, zoom, and pan
             draw_x = int(
-                (self.normalized_crosshair_x * zoomed_width) + center_offset_x + self.pan_offset_x)  # CORRECTED
+                (self.normalized_crosshair_x * zoomed_width) + center_offset_x + self.pan_offset_x)
             draw_y = int(
-                (self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y)  # CORRECTED
+                (self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y)
 
             colors = self.parent_viewer.view_colors
             h_color, v_color = None, None
@@ -329,8 +438,44 @@ class SliceViewLabel(QLabel):
                 painter.setPen(intersect_pen)
                 painter.drawEllipse(draw_x - 4, draw_y - 4, 8, 8)
 
-            painter.end()
 
+            # Draw oblique axis if visible and in oblique view mode
+            if (self.oblique_axis_visible and 
+                self.view_type == 'coronal' and
+                self.parent_viewer.oblique_view_enabled):
+                
+                import math
+                
+                # Use crosshair position as the center point for the oblique axis
+                center_x = draw_x  # Use crosshair X position
+                center_y = draw_y  # Use crosshair Y position
+                length = min(self.width(), self.height()) * 0.4  # 40% of smaller dimension
+                
+                angle_rad = math.radians(self.oblique_axis_angle)
+                end_x = center_x + length * math.cos(angle_rad)
+                end_y = center_y - length * math.sin(angle_rad)  # Negative because Y increases downward
+                
+                # Draw yellow axis line
+                axis_pen = QPen(QColor(255, 255, 100), 3)
+                painter.setPen(axis_pen)
+                painter.drawLine(int(center_x), int(center_y), int(end_x), int(end_y))
+                
+                # Draw draggable handle at the end
+                painter.setBrush(QColor(255, 255, 100))
+                painter.setPen(QPen(QColor(200, 200, 0), 2))
+                painter.drawEllipse(int(end_x - 8), int(end_y - 8), 16, 16)
+                
+                # Draw angle annotation above the line
+                annotation_text = f"{self.oblique_axis_angle:.1f}°"
+                painter.setPen(QPen(QColor(255, 255, 255)))
+                painter.setFont(painter.font())
+                
+                # Position text slightly above and to the right of center
+                text_x = int(center_x + 20)
+                text_y = int(center_y - 20)
+                painter.drawText(text_x, text_y, annotation_text)
+
+            painter.end()
     def _apply_zoom_and_pan(self):
         # Sync local zoom factor from viewer's global factor
         self.zoom_factor = self.parent_viewer.global_zoom_factor

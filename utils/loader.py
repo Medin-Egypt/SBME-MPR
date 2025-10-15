@@ -121,8 +121,13 @@ def load_nifti_data(file_path):
         return None, None, None, 0, 1
 
 
-def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=1000, rot_x_deg=0, rot_y_deg=0, view_type='axial'):
-    # ... (This function is unchanged)
+def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=1000, rot_x_deg=0, rot_y_deg=0, view_type='axial', norm_coords=None):
+    """
+    Get slice data with optional normalized coordinates for oblique slicing.
+    
+    Args:
+        norm_coords: Dictionary with 'S', 'C', 'A' normalized coordinates (0-1) for oblique center
+    """
     if data is None:
         return np.zeros((10, 10), dtype=np.uint8)
 
@@ -136,7 +141,13 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
         slice_data = np.rot90(data[slices['sagittal'], :, :])
         x_spacing, y_spacing = affine[1, 1], affine[2, 2]
     elif view_type == 'oblique':
-        slice_data = _get_oblique_slice(data, rot_x_deg, rot_y_deg, slices['oblique'])
+        # Use normalized coordinates if provided to center the oblique slice
+        center_position = None
+        if norm_coords is not None:
+            # Convert normalized coords to position tuple (Sagittal, Coronal, Axial)
+            center_position = (norm_coords['S'], norm_coords['C'], norm_coords['A'])
+        
+        slice_data = _get_oblique_slice(data, rot_x_deg, rot_y_deg, slices['oblique'], center_position)
         x_spacing, y_spacing = 1, 1
     else:
         return np.zeros((10, 10), dtype=np.uint8)
@@ -163,8 +174,55 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
 
     return slice_data.astype(np.uint8)
 
+def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx, center_position=None):
+    """
+    Extract an oblique slice from the volume.
+    
+    Args:
+        data: 3D numpy array
+        rot_x_deg: Rotation around X axis in degrees
+        rot_y_deg: Rotation around Y axis in degrees
+        slice_idx: Slice index (used for offset from center)
+        center_position: Tuple of (x, y, z) normalized coordinates (0-1) for slice center.
+                        If None, uses volume center.
+    """
+    if center_position is None:
+        center_voxel = np.array(data.shape) / 2.0
+    else:
+        # Convert normalized coordinates to voxel coordinates
+        center_voxel = np.array([
+            center_position[0] * (data.shape[0] - 1),
+            center_position[1] * (data.shape[1] - 1),
+            center_position[2] * (data.shape[2] - 1)
+        ])
+    
+    slice_dim = int(np.linalg.norm(data.shape))
 
-def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx):
+    theta_x = np.deg2rad(rot_x_deg)
+    theta_y = np.deg2rad(rot_y_deg)
+    rot_x_mat = np.array([[1, 0, 0], [0, np.cos(theta_x), -np.sin(theta_x)], [0, np.sin(theta_x), np.cos(theta_x)]])
+    rot_y_mat = np.array([[np.cos(theta_y), 0, np.sin(theta_y)], [0, 1, 0], [-np.sin(theta_y), 0, np.cos(theta_y)]])
+    transform_mat = rot_y_mat @ rot_x_mat
+
+    u_vec = transform_mat @ np.array([1, 0, 0])
+    v_vec = transform_mat @ np.array([0, 1, 0])
+    w_vec = transform_mat @ np.array([0, 0, 1])
+
+    x_range = np.arange(-slice_dim / 2, slice_dim / 2)
+    y_range = np.arange(-slice_dim / 2, slice_dim / 2)
+    xx, yy = np.meshgrid(x_range, y_range)
+
+    # No offset - the slice always passes through the center_voxel position
+    slice_offset = 0
+    
+    points_3d = center_voxel[:, np.newaxis] \
+                + xx.ravel() * u_vec[:, np.newaxis] \
+                + yy.ravel() * v_vec[:, np.newaxis] \
+                + slice_offset * w_vec[:, np.newaxis]
+
+    coords = [points_3d[0], points_3d[1], points_3d[2]]
+    oblique_slice = map_coordinates(data, coords, order=1, cval=data.min(), mode='constant')
+    return oblique_slice.reshape((slice_dim, slice_dim))
     # ... (This function is unchanged)
     center_voxel = np.array(data.shape) / 2.0
     slice_dim = int(np.linalg.norm(data.shape))
