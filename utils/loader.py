@@ -1,16 +1,20 @@
 # loader.py
 
-from scipy.ndimage import map_coordinates
-import pydicom
-from pydicom import dcmread
-from pydicom.pixel_data_handlers.util import apply_voi_lut
-import numpy as np
-import nibabel as nib
 import os
+import datetime
+import json
+import numpy as np
+import pydicom
+import nibabel as nib
+from pydicom import dcmread
+from pydicom.dataset import Dataset, FileMetaDataset
+from pydicom.uid import generate_uid
+from scipy.ndimage import map_coordinates
+
 
 def load_dicom_data(folder_path):
     """
-    Loads a DICOM series, correctly handling orientation, spacing, and intensity windowing.
+    Loads a DICOM series, handling orientation, spacing, intensity, and full metadata.
     """
     try:
         if os.path.isdir(folder_path):
@@ -26,7 +30,7 @@ def load_dicom_data(folder_path):
         slices = []
         for f in dicom_files:
             try:
-                ds = dcmread(f)
+                ds = dcmread(f, stop_before_pixels=False)
                 if hasattr(ds, 'pixel_array') and hasattr(ds, 'ImagePositionPatient'):
                     slices.append(ds)
             except Exception:
@@ -37,37 +41,43 @@ def load_dicom_data(folder_path):
 
         slices.sort(key=lambda s: float(s.ImagePositionPatient[2]))
 
-        text_data = []
-        for field in ["BodyPartExamined", "StudyDescription", "SeriesDescription", "ProtocolName"]:
-            value = slices[0].get(field)
-            if value:
-                text_data.append(field + ": " + str(value).upper())
+        first_slice = slices[0]
+        metadata = {}
 
-        image_stack = np.stack([s.pixel_array * float(getattr(s, 'RescaleSlope', 1)) +
-                                float(getattr(s, 'RescaleIntercept', 0))
-                                for s in slices])
+        tags_to_extract = [
+            # Patient/Study Info
+            "PatientName", "PatientID", "PatientBirthDate", "PatientSex",
+            "StudyInstanceUID", "StudyDate", "StudyTime", "StudyDescription",
+            "SeriesInstanceUID", "SeriesDate", "SeriesTime", "SeriesDescription",
+            "Modality", "Manufacturer", "ManufacturersModelName", "ProtocolName", "BodyPartExamined",
+            # Contrast/Intensity Info
+            "RescaleIntercept", "RescaleSlope", "RescaleType",
+            "WindowCenter", "WindowWidth", "VOILUTFunction"
+        ]
 
-        # Transpose from (Z, Y, X) to (X, Y, Z)
+        for tag in tags_to_extract:
+            value = first_slice.get(tag, None)
+            if value is not None:
+                if isinstance(value, pydicom.multival.MultiValue):
+                    metadata[tag] = [str(v) for v in value]
+                else:
+                    metadata[tag] = str(value)
+
+        # Apply rescale slope and intercept to get the real-world values
+        rescale_slope = float(metadata.get('RescaleSlope', 1))
+        rescale_intercept = float(metadata.get('RescaleIntercept', 0))
+        image_stack = np.stack([s.pixel_array * rescale_slope + rescale_intercept for s in slices])
+
+        # Transpose and flip for consistent orientation
         image_stack = image_stack.transpose((2, 1, 0))
+        image_stack = image_stack[:, ::-1, :]
 
-        # --- FIX: Flip the volume along the X-axis ---
-        # This mirrors the sagittal view to face the other direction and
-        # corrects the horizontal orientation of the axial view.
-        image_stack = image_stack[::, ::-1, ::]
-
-        pixel_spacing = [float(x) for x in slices[0].PixelSpacing]
-        if len(slices) > 1:
-            pos1 = np.array(slices[0].ImagePositionPatient)
-            pos2 = np.array(slices[1].ImagePositionPatient)
-            slice_spacing = np.linalg.norm(pos2 - pos1)
-        else:
-            slice_spacing = float(getattr(slices[0], 'SliceThickness', 1.0))
-
-        affine = np.diag([pixel_spacing[0], pixel_spacing[1], slice_spacing, 1])
-
-        if hasattr(slices[0], 'WindowCenter') and hasattr(slices[0], 'WindowWidth'):
-            center = float(slices[0].WindowCenter[0] if isinstance(slices[0].WindowCenter, pydicom.multival.MultiValue) else slices[0].WindowCenter)
-            width = float(slices[0].WindowWidth[0] if isinstance(slices[0].WindowWidth, pydicom.multival.MultiValue) else slices[0].WindowWidth)
+        # Determine intensity window for display
+        if 'WindowCenter' in metadata and 'WindowWidth' in metadata:
+            center = float(
+                metadata['WindowCenter'][0] if isinstance(metadata['WindowCenter'], list) else metadata['WindowCenter'])
+            width = float(
+                metadata['WindowWidth'][0] if isinstance(metadata['WindowWidth'], list) else metadata['WindowWidth'])
             intensity_min = center - width / 2
             intensity_max = center + width / 2
         else:
@@ -78,8 +88,28 @@ def load_dicom_data(folder_path):
             else:
                 intensity_min, intensity_max = image_stack.min(), image_stack.max()
 
+        # Build affine matrix
+        pixel_spacing = [float(x) for x in first_slice.PixelSpacing]
+        if len(slices) > 1:
+            pos1 = np.array(slices[0].ImagePositionPatient)
+            pos2 = np.array(slices[1].ImagePositionPatient)
+            slice_spacing = np.linalg.norm(pos2 - pos1)
+        else:
+            slice_spacing = float(getattr(first_slice, 'SliceThickness', 1.0))
+
+        orientation = np.array(first_slice.ImageOrientationPatient).reshape(2, 3)
+        row_vec, col_vec = orientation[0], orientation[1]
+        slice_vec = np.cross(row_vec, col_vec)
+
+        affine = np.identity(4)
+        affine[:3, 0] = row_vec * pixel_spacing[0]
+        affine[:3, 1] = col_vec * pixel_spacing[1]
+        affine[:3, 2] = slice_vec * slice_spacing
+        affine[:3, 3] = first_slice.ImagePositionPatient
+
         dims = image_stack.shape
-        return image_stack, affine, dims, intensity_min, intensity_max, text_data
+        return image_stack, affine, dims, intensity_min, intensity_max, metadata
+
     except Exception as e:
         print(f"Error loading DICOM data: {e}")
         return None, None, None, 0, 1, None
@@ -87,44 +117,58 @@ def load_dicom_data(folder_path):
 
 def load_nifti_data(file_path):
     """
-    Loads NIfTI data, flips it horizontally to correct mirroring, and returns it.
+    Loads NIfTI data, creates default metadata, and calculates a display window.
     """
     try:
         nifti_file = nib.load(file_path)
         data = nifti_file.get_fdata()
         affine = nifti_file.affine
 
-        # --- FIX: Flip the volume along the X-axis ---
-        # This corrects left-right mirroring issues, such as the heart
-        # appearing on the right side of the scan.
-        data = data[::-1, :, :]
+        data = data[::-1, :, :]  # Corrects left-right mirroring
 
         if data.ndim < 3:
             raise ValueError(f"Data has fewer than 3 dimensions ({data.ndim}).")
 
         dims = data.shape
 
-        # Calculate intensity window after flipping, focusing on foreground pixels
-        # for better contrast.
         foreground_pixels = data[data > np.min(data)]
         if foreground_pixels.size > 0:
             intensity_min = np.percentile(foreground_pixels, 1)
             intensity_max = np.percentile(foreground_pixels, 99)
         else:
-            # Fallback in case there are no foreground pixels
             intensity_min, intensity_max = np.min(data), np.max(data)
 
-        return data, affine, dims, intensity_min, intensity_max
+        metadata = {
+            "PatientName": "Unknown", "PatientID": "Unknown",
+            "StudyDescription": "NIfTI Study", "Modality": "Unknown",
+            "StudyInstanceUID": "", "SeriesInstanceUID": "",
+            "RescaleIntercept": "0",
+            "RescaleSlope": "1",
+            "WindowCenter": str((intensity_max + intensity_min) / 2),
+            "WindowWidth": str(intensity_max - intensity_min)
+        }
+
+        descrip = nifti_file.header.get('descrip')
+        if descrip:
+            try:
+                # Attempt to parse JSON from description field
+                header_info = json.loads(descrip.tobytes().decode('utf-8', 'ignore').strip())
+                metadata.update(header_info)
+            except (json.JSONDecodeError, AttributeError):
+                # Fallback to using the raw description if not JSON
+                metadata["StudyDescription"] = descrip.tobytes().decode('utf-8', 'ignore').strip()
+
+        return data, affine, dims, intensity_min, intensity_max, metadata
 
     except Exception as e:
         print(f"Error loading NIfTI file: {e}")
-        return None, None, None, 0, 1
+        return None, None, None, 0, 1, None
 
 
 def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=1000, rot_x_deg=0, rot_y_deg=0, view_type='axial', norm_coords=None):
     """
     Get slice data with optional normalized coordinates for oblique slicing.
-    
+
     Args:
         norm_coords: Dictionary with 'S', 'C', 'A' normalized coordinates (0-1) for oblique center
     """
@@ -146,7 +190,7 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
         if norm_coords is not None:
             # Convert normalized coords to position tuple (Sagittal, Coronal, Axial)
             center_position = (norm_coords['S'], norm_coords['C'], norm_coords['A'])
-        
+
         slice_data = _get_oblique_slice(data, rot_x_deg, rot_y_deg, slices['oblique'], center_position)
         x_spacing, y_spacing = 1, 1
     else:
@@ -155,8 +199,8 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
     if slice_data.size == 0:
         return np.zeros((10, 10), dtype=np.uint8)
 
-    if x_spacing > 0 and y_spacing > 0:
-        aspect_ratio = y_spacing / x_spacing
+    if x_spacing != 0 and y_spacing != 0:
+        aspect_ratio = abs(y_spacing / x_spacing)
         new_height = int(slice_data.shape[0] * aspect_ratio)
         if new_height > 0:
             y_coords = np.linspace(0, slice_data.shape[0] - 1, new_height)
@@ -174,10 +218,11 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
 
     return slice_data.astype(np.uint8)
 
+
 def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx, center_position=None):
     """
     Extract an oblique slice from the volume.
-    
+
     Args:
         data: 3D numpy array
         rot_x_deg: Rotation around X axis in degrees
@@ -195,7 +240,7 @@ def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx, center_position=No
             center_position[1] * (data.shape[1] - 1),
             center_position[2] * (data.shape[2] - 1)
         ])
-    
+
     slice_dim = int(np.linalg.norm(data.shape))
 
     theta_x = np.deg2rad(rot_x_deg)
@@ -214,7 +259,7 @@ def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx, center_position=No
 
     # No offset - the slice always passes through the center_voxel position
     slice_offset = 0
-    
+
     points_3d = center_voxel[:, np.newaxis] \
                 + xx.ravel() * u_vec[:, np.newaxis] \
                 + yy.ravel() * v_vec[:, np.newaxis] \
@@ -250,3 +295,119 @@ def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx, center_position=No
     coords = [points_3d[0], points_3d[1], points_3d[2]]
     oblique_slice = map_coordinates(data, coords, order=1, cval=data.min(), mode='constant')
     return oblique_slice.reshape((slice_dim, slice_dim))
+
+
+def export_to_nifti(image_data, affine, output_path, metadata=None):
+    """
+    Exports 3D data to a NIfTI file, embedding metadata into the header.
+    """
+    try:
+        # Reverse the flip from the loader to restore original orientation
+        image_data = image_data[::-1, :, :]
+        nifti_image = nib.Nifti1Image(image_data.astype(np.float32), affine)
+
+        if metadata:
+            header_info = {
+                "PatientName": metadata.get("PatientName", "Unknown"),
+                "StudyDescription": metadata.get("StudyDescription", "N/A"),
+                "RescaleSlope": metadata.get("RescaleSlope", "1"),
+                "RescaleIntercept": metadata.get("RescaleIntercept", "0"),
+                "WindowCenter": metadata.get("WindowCenter"),
+                "WindowWidth": metadata.get("WindowWidth")
+            }
+
+            header_info = {k: v for k, v in header_info.items() if v is not None}
+            desc_str = json.dumps(header_info)
+            nifti_image.header['descrip'] = desc_str[:79].encode('utf-8')
+
+        nib.save(nifti_image, output_path)
+        print(f"Successfully exported data to {output_path}")
+        return True
+    except Exception as e:
+        print(f"Error exporting to NIfTI: {e}")
+        return False
+
+
+def export_to_dicom(image_data, affine, output_folder, metadata=None):
+    """
+    Exports 3D data to a DICOM series, populating full metadata including contrast.
+    """
+    try:
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
+
+        if metadata is None:
+            metadata = {}
+
+        image_data = image_data[:, ::-1, :]
+        image_data = image_data.transpose((2, 1, 0))
+
+        rescale_slope = float(metadata.get('RescaleSlope', 1))
+        rescale_intercept = float(metadata.get('RescaleIntercept', 0))
+        if rescale_slope == 0: rescale_slope = 1
+        stored_pixel_data = (image_data - rescale_intercept) / rescale_slope
+
+        study_instance_uid = metadata.get('StudyInstanceUID') or generate_uid()
+        series_instance_uid = metadata.get('SeriesInstanceUID') or generate_uid()
+
+        pixel_spacing = [abs(affine[0, 0]), abs(affine[1, 1])]
+        slice_thickness = abs(affine[2, 2])
+
+        row_vec = affine[:3, 0] / pixel_spacing[0]
+        col_vec = affine[:3, 1] / pixel_spacing[1]
+        image_orientation_patient = list(np.round(row_vec, 6)) + list(np.round(col_vec, 6))
+
+        for i in range(stored_pixel_data.shape[0]):
+            file_meta = FileMetaDataset()
+            file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'  # CT Image Storage
+            file_meta.MediaStorageSOPInstanceUID = generate_uid()
+            file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID
+            file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+
+            ds = Dataset()
+            ds.file_meta = file_meta
+
+            ds.PatientName = metadata.get("PatientName", "Unknown")
+            ds.PatientID = metadata.get("PatientID", "Unknown")
+            ds.StudyDescription = metadata.get("StudyDescription", "Exported Study")
+            ds.Modality = metadata.get("Modality", "CT")
+            ds.StudyInstanceUID = study_instance_uid
+            ds.SeriesInstanceUID = series_instance_uid
+            ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+            ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+
+            ds.RescaleIntercept = str(rescale_intercept)
+            ds.RescaleSlope = str(rescale_slope)
+            ds.RescaleType = metadata.get("RescaleType", "HU")
+            if "WindowCenter" in metadata:
+                ds.WindowCenter = metadata["WindowCenter"]
+            if "WindowWidth" in metadata:
+                ds.WindowWidth = metadata["WindowWidth"]
+            if "VOILUTFunction" in metadata:
+                ds.VOILUTFunction = metadata["VOILUTFunction"]
+
+            position = affine @ np.array([0, 0, i, 1])
+            ds.ImagePositionPatient = list(np.round(position[:3], 6))
+            ds.ImageOrientationPatient = image_orientation_patient
+            ds.PixelSpacing = pixel_spacing
+            ds.SliceThickness = slice_thickness
+            ds.InstanceNumber = i + 1
+
+            slice_data = stored_pixel_data[i, :, :]
+            ds.Rows, ds.Columns = slice_data.shape
+            ds.SamplesPerPixel = 1
+            ds.PhotometricInterpretation = "MONOCHROME2"
+            ds.PixelRepresentation = 1  # Signed Integer
+            ds.BitsAllocated = 16
+            ds.BitsStored = 16
+            ds.HighBit = 15
+            ds.PixelData = slice_data.astype(np.int16).tobytes()
+
+            filename = os.path.join(output_folder, f"slice_{i + 1:04d}.dcm")
+            ds.save_as(filename, write_like_original=False)
+
+        print(f"Successfully exported DICOM series to {output_folder}")
+        return True
+    except Exception as e:
+        print(f"Error exporting to DICOM: {e}")
+        return False

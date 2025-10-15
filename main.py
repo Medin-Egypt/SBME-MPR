@@ -116,6 +116,7 @@ class SliceCropDialog(QDialog):
 class MPRViewer(QMainWindow):
     def __init__(self, file_path=None):
         super().__init__()
+        self.metadata = None
         self.setWindowTitle("MPR VIEWER")
         self.setGeometry(100, 100, 1200, 800)
 
@@ -625,7 +626,7 @@ class MPRViewer(QMainWindow):
                                                    "NIfTI Files (*.nii *.nii.gz);;All Files (*)")
         if file_path:
             try:
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max = loader.load_nifti_data(
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, self.metadata = loader.load_nifti_data(
                     file_path)
                 self.file_loaded = True
 
@@ -654,7 +655,7 @@ class MPRViewer(QMainWindow):
         folder_path = QFileDialog.getExistingDirectory(self, "Select DICOM Folder", "", QFileDialog.ShowDirsOnly)
         if folder_path:
             try:
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, organ_data = loader.load_dicom_data(
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, self.metadata = loader.load_dicom_data(
                     folder_path)
                 self.file_loaded = True
 
@@ -681,7 +682,7 @@ class MPRViewer(QMainWindow):
 
                 QMessageBox.information(
                     self, "Success",
-                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{'\n'.join(organ_data)}"
+                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n"
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
@@ -1210,27 +1211,45 @@ class MPRViewer(QMainWindow):
         if button.isChecked():
             button.setChecked(False)
 
-            if button.objectName() == "export_btn_1":  # DICOM export
-                if not self.file_loaded:
-                    QMessageBox.warning(self, "No Data", "Please load a file first.")
+            if not self.file_loaded:
+                QMessageBox.warning(self, "No Data", "Please load a file first.")
+                return
+
+            if self.crop_bounds is not None:
+                reply = QMessageBox.question(
+                    self, "Apply Crop",
+                    "Do you want to apply the current crop before exporting?",
+                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+                )
+
+                if reply == QMessageBox.Cancel:
                     return
+                elif reply == QMessageBox.Yes:
+                    self.apply_crop()
 
-                if self.crop_bounds is not None:
-                    reply = QMessageBox.question(
-                        self, "Apply Crop",
-                        "Do you want to apply the current crop before exporting?",
-                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
-                    )
+            if button.objectName() == "export_btn_1":  # DICOM export
+                output_dir = QFileDialog.getExistingDirectory(
+                    self, "Select folder to save DICOM file", ""
+                )
+                if output_dir:
+                    success = loader.export_to_dicom(self.data, self.affine, output_dir, self.metadata)
+                    if success:
+                        QMessageBox.information(self, "Export Successful", f"DICOM file saved to:\n{output_dir}")
+                    else:
+                        QMessageBox.warning(self, "Export Failed", "Failed to save DICOM file.")
 
-                    if reply == QMessageBox.Cancel:
-                        return
-                    elif reply == QMessageBox.Yes:
-                        self.apply_crop()
 
-                print(f"Export triggered: {button.toolTip()}")
-                QMessageBox.information(self, "Export", f"DICOM export initiated.\nCurrent dimensions: {self.dims}")
-            else:
-                print(f"Export triggered: {button.toolTip()}")
+            elif button.objectName() == "export_btn_0":  # NIFTI export
+                output_file = QFileDialog.getSaveFileName(
+                    self, "Save NIfTI file", "", "NIfTI Files (*.nii.gz *.nii)"
+                )
+                if output_file[0]:
+                    success = loader.export_to_nifti(self.data, self.affine, output_file[0], self.metadata)
+                    if success:
+                        QMessageBox.information(self, "Export Successful",
+                                                f"NIfTI file saved to:\n{output_file[0]}")
+                    else:
+                        QMessageBox.warning(self, "Export Failed", "Failed to save NIfTI file.")
 
     def create_viewing_area(self):
         widget = QWidget()
