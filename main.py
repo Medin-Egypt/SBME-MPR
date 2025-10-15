@@ -81,7 +81,7 @@ class SliceCropDialog(QDialog):
         self.end_slice.setRange(1, max_slice_count)
         self.end_slice.setValue(max_slice_count)
 
-        form_layout.addRow("Show slices from:", self.start_slice)
+        form_layout.addRow("Crop slices from:", self.start_slice)
         form_layout.addRow("to:", self.end_slice)
 
         layout.addLayout(form_layout)
@@ -152,6 +152,7 @@ class MPRViewer(QMainWindow):
         self.original_data = None
         self.segmentation_files = []  # List of loaded segmentation file paths
         self.segmentation_data_list = []  # List of numpy arrays for each segmentation
+        self.original_segmentation_data_list = []
         self.segmentation_visible = False  # Whether to show segmentation overlays
 
         self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
@@ -389,6 +390,11 @@ class MPRViewer(QMainWindow):
         self.data = self.original_data[:, :, start_idx : end_idx + 1].copy()
         self.dims = self.data.shape
 
+        # ADD THIS: Crop all segmentation data as well
+        if self.segmentation_data_list:
+            for i in range(len(self.segmentation_data_list)):
+                self.segmentation_data_list[i] = self.segmentation_data_list[i][:, :, start_idx : end_idx + 1].copy()
+
         # Reset views to the new, smaller volume
         self.reset_crosshair_and_slices()
         self.update_all_views()
@@ -484,6 +490,11 @@ class MPRViewer(QMainWindow):
             self.data = self.original_data.copy()
             self.dims = self.data.shape
             self.crop_bounds = None
+            
+            # ADD THIS: Reset segmentation data to original as well
+            if hasattr(self, 'original_segmentation_data_list') and self.original_segmentation_data_list:
+                self.segmentation_data_list = [seg.copy() for seg in self.original_segmentation_data_list]
+            
             self.reset_crosshair_and_slices()
 
     def set_slice_from_crosshair(self, source_view, norm_x, norm_y):
@@ -708,7 +719,8 @@ class MPRViewer(QMainWindow):
         # Clear existing segmentations
         self.segmentation_files = []
         self.segmentation_data_list = []
-        
+        self.original_segmentation_data_list = []  # Store original segmentation data for crop reset
+
         # Load each segmentation file
         for file_path in file_paths:
             try:
@@ -745,6 +757,36 @@ class MPRViewer(QMainWindow):
                 self, 
                 "Success", 
                 f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
+            )
+
+    def delete_segmentation_files(self):
+        """Deletes all loaded segmentation files."""
+        if not self.segmentation_data_list:
+            QMessageBox.information(self, "No Segmentation", "No segmentation files are currently loaded.")
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "Delete Segmentation",
+            f"Are you sure you want to delete all {len(self.segmentation_data_list)} segmentation file(s)?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Clear all segmentation data
+            self.segmentation_files = []
+            self.segmentation_data_list = []
+            self.original_segmentation_data_list = []
+            self.segmentation_visible = False
+            
+            # Update all views to remove overlays
+            self.update_all_views()
+            
+            QMessageBox.information(
+                self,
+                "Success",
+                "All segmentation files have been deleted."
             )
 
     def handle_cine_button_toggle(self, checked):
@@ -1146,6 +1188,12 @@ class MPRViewer(QMainWindow):
         load_seg_btn.setMinimumHeight(35)
         load_seg_btn.clicked.connect(self.load_segmentation_files)
         seg_layout.addWidget(load_seg_btn)
+
+        delete_seg_btn = QPushButton("Delete Segmentation")
+        delete_seg_btn.setObjectName("delete_seg_btn")
+        delete_seg_btn.setMinimumHeight(35)
+        delete_seg_btn.clicked.connect(self.delete_segmentation_files)
+        seg_layout.addWidget(delete_seg_btn)
 
         seg_group.setLayout(seg_layout)
         layout.addWidget(seg_group)
