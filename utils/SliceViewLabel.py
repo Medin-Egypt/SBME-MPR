@@ -58,6 +58,10 @@ class SliceViewLabel(QLabel):
         self.oblique_axis_dragging = False
         self.oblique_axis_start_angle = 0
         self.oblique_axis_drag_start_pos = None
+        
+        # Flags for crosshair display control
+        self.show_only_center_point = False
+        self.hide_crosshair_completely = False  # Hide all crosshair elements
 
     # --- MODIFIED METHOD ---
     def _cine_next_slice(self):
@@ -381,6 +385,10 @@ class SliceViewLabel(QLabel):
         rotate_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_1_1")
 
         if self.parent_viewer.file_loaded and self._original_pixmap and not self._original_pixmap.isNull():
+            # Skip all crosshair drawing if hide_crosshair_completely is True
+            if self.hide_crosshair_completely:
+                return
+            
             painter = QPainter(self)
 
             label_width = self.width()
@@ -407,31 +415,34 @@ class SliceViewLabel(QLabel):
             draw_y = int(
                 (self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y)
 
-            colors = self.parent_viewer.view_colors
-            h_color, v_color = None, None
+            # Draw crosshair lines only if not in "center point only" mode
+            if not self.show_only_center_point:
+                colors = self.parent_viewer.view_colors
+                h_color, v_color = None, None
 
-            if self.view_type == 'axial':
-                h_color = colors['coronal']
-                v_color = colors['sagittal']
-            elif self.view_type == 'coronal':
-                h_color = colors['axial']
-                v_color = colors['sagittal']
-            elif self.view_type == 'sagittal':
-                h_color = colors['axial']
-                v_color = colors['coronal']
+                if self.view_type == 'axial':
+                    h_color = colors['coronal']
+                    v_color = colors['sagittal']
+                elif self.view_type == 'coronal':
+                    h_color = colors['axial']
+                    v_color = colors['sagittal']
+                elif self.view_type == 'sagittal':
+                    h_color = colors['axial']
+                    v_color = colors['coronal']
 
-            if h_color:
-                pen_h = QPen(h_color)
-                pen_h.setWidth(1)
-                painter.setPen(pen_h)
-                painter.drawLine(0, draw_y, self.width(), draw_y)
+                if h_color:
+                    pen_h = QPen(h_color)
+                    pen_h.setWidth(1)
+                    painter.setPen(pen_h)
+                    painter.drawLine(0, draw_y, self.width(), draw_y)
 
-            if v_color:
-                pen_v = QPen(v_color)
-                pen_v.setWidth(1)
-                painter.setPen(pen_v)
-                painter.drawLine(draw_x, 0, draw_x, self.height())
+                if v_color:
+                    pen_v = QPen(v_color)
+                    pen_v.setWidth(1)
+                    painter.setPen(pen_v)
+                    painter.drawLine(draw_x, 0, draw_x, self.height())
 
+            # Always draw the center point marker
             if 0 <= draw_x <= self.width() and 0 <= draw_y <= self.height():
                 intersect_pen = QPen(QColor(255, 255, 0))
                 intersect_pen.setWidth(2)

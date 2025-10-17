@@ -165,6 +165,65 @@ def load_nifti_data(file_path):
         return None, None, None, 0, 1, None
 
 
+def project_point_to_oblique_plane(norm_coords, data_shape, rot_x_deg, rot_y_deg):
+    """
+    Projects a 3D point onto the oblique plane and returns normalized 2D coordinates
+    and the perpendicular distance from the plane.
+    
+    Args:
+        norm_coords: Dictionary with 'S', 'C', 'A' normalized coordinates (0-1)
+        data_shape: Shape of the data volume
+        rot_x_deg: Rotation around X axis in degrees
+        rot_y_deg: Rotation around Y axis in degrees
+    
+    Returns:
+        Tuple of (norm_x, norm_y, depth_offset) where:
+            - norm_x, norm_y: projection on the oblique plane (0-1)
+            - depth_offset: perpendicular distance from plane center
+    """
+    if norm_coords is None:
+        return (0.5, 0.5, 0)
+    
+    # Convert normalized coordinates to voxel coordinates
+    point_voxel = np.array([
+        norm_coords['S'] * (data_shape[0] - 1),
+        norm_coords['C'] * (data_shape[1] - 1),
+        (1.0 - norm_coords['A']) * (data_shape[2] - 1)
+    ])
+    
+    # Volume center (where oblique plane is centered)
+    center_voxel = np.array(data_shape) / 2.0
+    
+    # Calculate rotation matrices
+    theta_x = np.deg2rad(-rot_x_deg)
+    theta_y = np.deg2rad(-rot_y_deg)
+    rot_x_mat = np.array([[1, 0, 0], [0, np.cos(theta_x), -np.sin(theta_x)], [0, np.sin(theta_x), np.cos(theta_x)]])
+    rot_y_mat = np.array([[np.cos(theta_y), 0, np.sin(theta_y)], [0, 1, 0], [-np.sin(theta_y), 0, np.cos(theta_y)]])
+    transform_mat = rot_y_mat @ rot_x_mat
+    
+    # Get plane basis vectors
+    u_vec = transform_mat @ np.array([1, 0, 0])
+    v_vec = transform_mat @ np.array([0, 1, 0])
+    w_vec = transform_mat @ np.array([0, 0, 1])  # Normal to the plane
+    
+    # Vector from plane center to the point
+    point_rel = point_voxel - center_voxel
+    
+    # Project onto plane basis vectors (in-plane coordinates)
+    u_coord = np.dot(point_rel, u_vec)
+    v_coord = np.dot(point_rel, v_vec)
+    
+    # Project onto normal vector (depth/perpendicular distance from plane)
+    depth_offset = np.dot(point_rel, w_vec)
+    
+    # Convert to normalized coordinates (0-1)
+    slice_dim = int(np.linalg.norm(data_shape))
+    norm_x = (u_coord + slice_dim / 2) / slice_dim
+    norm_y = (v_coord + slice_dim / 2) / slice_dim
+    
+    return (norm_x, norm_y, depth_offset)
+
+
 def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=1000, rot_x_deg=0, rot_y_deg=0, view_type='axial', norm_coords=None):
     """
     Get slice data with optional normalized coordinates for oblique slicing.
@@ -185,13 +244,20 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
         slice_data = np.rot90(data[slices['sagittal'], :, :])
         x_spacing, y_spacing = affine[1, 1], affine[2, 2]
     elif view_type == 'oblique':
-        # Use normalized coordinates if provided to center the oblique slice
-        center_position = None
+        # Oblique slice: field of view stays fixed, but slice depth changes with crosshair
+        # Calculate the perpendicular distance from volume center to use as slice offset
+        slice_offset = 0
         if norm_coords is not None:
-            # Convert normalized coords to position tuple (Sagittal, Coronal, Axial)
-            center_position = (norm_coords['S'], norm_coords['C'], norm_coords['A'])
-
-        slice_data = _get_oblique_slice(data, rot_x_deg, rot_y_deg, slices['oblique'], center_position)
+            _, _, depth_offset = project_point_to_oblique_plane(norm_coords, dims, rot_x_deg, rot_y_deg)
+            # Use the depth offset to determine which parallel slice to show
+            slice_dim = int(np.linalg.norm(dims))
+            slice_offset = int(depth_offset + slice_dim / 2)
+        else:
+            slice_dim = int(np.linalg.norm(dims))
+            slice_offset = slice_dim // 2
+        
+        # Keep the oblique plane centered on volume center
+        slice_data = _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_offset, center_position=None)
         x_spacing, y_spacing = 1, 1
     else:
         return np.zeros((10, 10), dtype=np.uint8)
@@ -235,16 +301,18 @@ def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx, center_position=No
         center_voxel = np.array(data.shape) / 2.0
     else:
         # Convert normalized coordinates to voxel coordinates
+        # Invert the axial (Z) coordinate to match the other views
         center_voxel = np.array([
             center_position[0] * (data.shape[0] - 1),
-            center_position[1] * (data.shape[1] - 1),
-            center_position[2] * (data.shape[2] - 1)
+             center_position[1] * (data.shape[1] - 1),
+            (1.0 - center_position[2]) * (data.shape[2] - 1)  # Invert Z coordinate
         ])
 
     slice_dim = int(np.linalg.norm(data.shape))
 
-    theta_x = np.deg2rad(rot_x_deg)
-    theta_y = np.deg2rad(rot_y_deg)
+# Negate the rotation angle to match the visual orientation
+    theta_x = np.deg2rad(-rot_x_deg)
+    theta_y = np.deg2rad(-rot_y_deg)
     rot_x_mat = np.array([[1, 0, 0], [0, np.cos(theta_x), -np.sin(theta_x)], [0, np.sin(theta_x), np.cos(theta_x)]])
     rot_y_mat = np.array([[np.cos(theta_y), 0, np.sin(theta_y)], [0, 1, 0], [-np.sin(theta_y), 0, np.cos(theta_y)]])
     transform_mat = rot_y_mat @ rot_x_mat
@@ -257,36 +325,9 @@ def _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_idx, center_position=No
     y_range = np.arange(-slice_dim / 2, slice_dim / 2)
     xx, yy = np.meshgrid(x_range, y_range)
 
-    # No offset - the slice always passes through the center_voxel position
-    slice_offset = 0
+    # Calculate offset from center based on slice_idx
+    slice_offset = slice_idx - (slice_dim / 2)
 
-    points_3d = center_voxel[:, np.newaxis] \
-                + xx.ravel() * u_vec[:, np.newaxis] \
-                + yy.ravel() * v_vec[:, np.newaxis] \
-                + slice_offset * w_vec[:, np.newaxis]
-
-    coords = [points_3d[0], points_3d[1], points_3d[2]]
-    oblique_slice = map_coordinates(data, coords, order=1, cval=data.min(), mode='constant')
-    return oblique_slice.reshape((slice_dim, slice_dim))
-    # ... (This function is unchanged)
-    center_voxel = np.array(data.shape) / 2.0
-    slice_dim = int(np.linalg.norm(data.shape))
-
-    theta_x = np.deg2rad(rot_x_deg)
-    theta_y = np.deg2rad(rot_y_deg)
-    rot_x_mat = np.array([[1, 0, 0], [0, np.cos(theta_x), -np.sin(theta_x)], [0, np.sin(theta_x), np.cos(theta_x)]])
-    rot_y_mat = np.array([[np.cos(theta_y), 0, np.sin(theta_y)], [0, 1, 0], [-np.sin(theta_y), 0, np.cos(theta_y)]])
-    transform_mat = rot_y_mat @ rot_x_mat
-
-    u_vec = transform_mat @ np.array([1, 0, 0])
-    v_vec = transform_mat @ np.array([0, 1, 0])
-    w_vec = transform_mat @ np.array([0, 0, 1])
-
-    x_range = np.arange(-slice_dim / 2, slice_dim / 2)
-    y_range = np.arange(-slice_dim / 2, slice_dim / 2)
-    xx, yy = np.meshgrid(x_range, y_range)
-
-    slice_offset = slice_idx - (int(np.linalg.norm(data.shape)) / 2)
     points_3d = center_voxel[:, np.newaxis] \
                 + xx.ravel() * u_vec[:, np.newaxis] \
                 + yy.ravel() * v_vec[:, np.newaxis] \

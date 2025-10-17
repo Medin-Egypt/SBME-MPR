@@ -528,19 +528,16 @@ class MPRViewer(QMainWindow):
 
 
     def update_oblique_from_crosshair(self):
-        """Update the oblique view slice based on the current crosshair position."""
-        if not self.file_loaded or self.dims is None:
-            return
+        """
+        DEPRECATED: The oblique view behavior has changed.
         
-        if not self.oblique_view_enabled:
-            return
-        
-        # Use the axial coordinate to determine the oblique slice
-        # This makes the oblique view follow the crosshair position
-        self.slices['oblique'] = self.slices['axial']
-        
-        # Update only the oblique view
-        self.update_view('oblique', 'oblique')
+        New behavior:
+        - The oblique view's field of view stays fixed (centered on volume center)
+        - The slice depth changes based on perpendicular distance of crosshair from the plane
+        - No crosshair or origin marker is shown in the oblique view
+        """
+        # This method is no longer needed - oblique updates happen in update_all_views
+        pass
 
     
     # --- NEW METHOD ---
@@ -938,10 +935,21 @@ class MPRViewer(QMainWindow):
                     norm_x, norm_y = self.norm_coords['S'], self.norm_coords['A']
                 elif view_type == 'sagittal':
                     norm_x, norm_y = self.norm_coords['C'], self.norm_coords['A']
+                elif view_type == 'oblique':
+                    # No crosshair/origin marker in oblique view
+                    norm_x, norm_y = 0.5, 0.5
                 else:
                     norm_x, norm_y = 0.5, 0.5
 
                 label.set_normalized_crosshair(norm_x, norm_y)
+                
+                # For oblique view, hide all crosshair elements (lines and center point)
+                if view_type == 'oblique':
+                    label.show_only_center_point = False
+                    label.hide_crosshair_completely = True
+                else:
+                    label.show_only_center_point = False
+                    label.hide_crosshair_completely = False
             
             if view_type == 'coronal' and self.oblique_view_enabled:
                 label.oblique_axis_angle = self.oblique_axis_angle
