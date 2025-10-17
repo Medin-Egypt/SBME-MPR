@@ -146,6 +146,8 @@ class SliceViewLabel(QLabel):
 
             # Call the new central method to update slice, crosshairs, and all views
             self.parent_viewer.set_slice_from_scroll(self.view_type, new_slice)
+            if self.parent_viewer.segmentation_view_enabled:
+                self.parent_viewer._last_segmentation_source_view = self.view_type
             event.accept()
         else:
             super().wheelEvent(event)
@@ -370,6 +372,8 @@ class SliceViewLabel(QLabel):
         self.normalized_crosshair_y = norm_y
 
         self.parent_viewer.set_slice_from_crosshair(self.view_type, norm_x, norm_y)
+        if self.parent_viewer.segmentation_view_enabled:
+            self.parent_viewer._last_segmentation_source_view = self.view_type
 
         self.update()
 

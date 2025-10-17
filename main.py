@@ -976,9 +976,101 @@ class MPRViewer(QMainWindow):
         label.update()
 
     def update_segmentation_view(self):
-        if 'segmentation' in self.view_labels:
-            label = self.view_labels['segmentation']
+        if 'segmentation' not in self.view_labels:
+            return
+        
+        label = self.view_labels['segmentation']
+        
+        # If no segmentation loaded, show the default text
+        if not self.segmentation_data_list:
             label.setText("Segmentation View\n\n[Add your segmentation data here]")
+            return
+        
+        # Determine which view to show based on the last interacted view
+        # Default to axial if none specified
+        source_view = getattr(self, '_last_segmentation_source_view', 'axial')
+            
+        # Get the current slice for the source view
+        if source_view == 'axial':
+            slice_idx = self.slices['axial']
+            view_type = 'axial'
+        elif source_view == 'coronal':
+            slice_idx = self.slices['coronal']
+            view_type = 'coronal'
+        elif source_view == 'sagittal':
+            slice_idx = self.slices['sagittal']
+            view_type = 'sagittal'
+        else:
+            slice_idx = self.slices['axial']
+            view_type = 'axial'
+
+        # Get the correct pixel dimensions for this view (maintains aspect ratio)
+        if view_type in self.pixel_dims:
+            correct_width, correct_height = self.pixel_dims[view_type]
+        else:
+            correct_width, correct_height = self.pixel_dims['axial']
+
+        from PyQt5.QtGui import QImage, QPainter, QPen
+
+        # Create image with correct aspect ratio
+        seg_image = QImage(correct_width, correct_height, QImage.Format_RGB32)
+        seg_image.fill(QColor(0, 0, 0))  # Black background
+
+        painter = QPainter(seg_image)
+
+        # Process each loaded segmentation
+        for seg_data in self.segmentation_data_list:
+            # Extract the slice from segmentation data
+            if view_type == 'axial':
+                seg_slice = seg_data[:, :, slice_idx]
+                seg_slice = np.flipud(np.rot90(seg_slice))
+            elif view_type == 'coronal':
+                seg_slice = seg_data[:, slice_idx, :]
+                seg_slice = np.rot90(seg_slice)
+            elif view_type == 'sagittal':
+                seg_slice = seg_data[slice_idx, :, :]
+                seg_slice = np.rot90(seg_slice)
+            
+            # Find edges/contours in the segmentation
+            from scipy import ndimage
+            
+            # Create binary mask
+            mask = seg_slice > 0.5
+            
+            if not mask.any():
+                continue
+            
+            # Find edges using morphological operations
+            eroded = ndimage.binary_erosion(mask)
+            edges = mask & ~eroded
+            
+            # Scale factor to match the correct dimensions
+            scale_y = correct_height / edges.shape[0]
+            scale_x = correct_width / edges.shape[1]
+            
+            # Draw the edges in red
+            pen = QPen(QColor(255, 0, 0), 2)  # Red color, 2px width
+            painter.setPen(pen)
+            
+            edge_coords = np.argwhere(edges)
+            for y, x in edge_coords:
+                scaled_x = int(x * scale_x)
+                scaled_y = int(y * scale_y)
+                painter.drawPoint(scaled_x, scaled_y)
+
+        painter.end()
+
+        # Convert QImage to QPixmap
+        pixmap = QPixmap.fromImage(seg_image)
+
+        # Scale to fit the label while maintaining aspect ratio
+        scaled_pixmap = pixmap.scaled(
+            label.size(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+
+        label.setPixmap(scaled_pixmap)
 
     def update_visible_views(self):
         # When resizing, recalculate the uniform scale and then update all visible views
@@ -1118,7 +1210,6 @@ class MPRViewer(QMainWindow):
         self.segmentation_view_enabled = True
         self.main_views_enabled = False
         self.oblique_view_enabled = False
-        self.segmentation_visible = False  # Hide overlays in segmentation view mode
 
         self.findChild(QPushButton, "mode_btn_0").setChecked(False)
         self.findChild(QPushButton, "mode_btn_2").setChecked(False)
