@@ -683,7 +683,7 @@ class MPRViewer(QMainWindow):
 
                 middle_slice_data = self.data[:, :, self.slices['axial']]
                 orientation, confidence = od.predict_dicom_image(middle_slice_data)
-                orientation_info = f"\n\nDetected Orientation: {orientation} ({confidence:.2f}% confidence)"
+                orientation_info = f"\n\nDetected Orientation: {orientation}"
 
                 self.show_main_views_initially()
                 self.update_all_views()  # Triggers uniform default scale calculation
@@ -696,23 +696,23 @@ class MPRViewer(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
                 import traceback
                 print(traceback.print_exc())
-    
+
     def load_segmentation_files(self):
         """Opens a file dialog to select multiple NIfTI segmentation files."""
         file_paths, _ = QFileDialog.getOpenFileNames(
-            self, 
-            "Select Segmentation Files", 
+            self,
+            "Select Segmentation Files",
             "",
             "NIfTI Files (*.nii *.nii.gz);;All Files (*)"
         )
-        
+
         if not file_paths:
             return
-        
+
         if not self.file_loaded:
             QMessageBox.warning(self, "No Data", "Please load a main file first.")
             return
-        
+
         # Clear existing segmentations
         self.segmentation_files = []
         self.segmentation_data_list = []
@@ -723,36 +723,36 @@ class MPRViewer(QMainWindow):
             try:
                 nifti_file = nib.load(file_path)
                 seg_data = nifti_file.get_fdata()
-                
+
                 # Apply the same flip as the main data
                 seg_data = seg_data[::-1, :, :]
-                
+
                 # Check if dimensions match
                 if seg_data.shape != self.data.shape:
                     QMessageBox.warning(
-                        self, 
-                        "Dimension Mismatch", 
+                        self,
+                        "Dimension Mismatch",
                         f"Segmentation file {os.path.basename(file_path)} has different dimensions.\n"
                         f"Expected: {self.data.shape}, Got: {seg_data.shape}"
                     )
                     continue
-                
+
                 self.segmentation_files.append(file_path)
                 self.segmentation_data_list.append(seg_data)
-                
+
             except Exception as e:
                 QMessageBox.critical(
-                    self, 
-                    "Error", 
+                    self,
+                    "Error",
                     f"Failed to load segmentation file {os.path.basename(file_path)}:\n{str(e)}"
                 )
-        
+
         if self.segmentation_data_list:
             self.segmentation_visible = True
             self.update_all_views()
             QMessageBox.information(
-                self, 
-                "Success", 
+                self,
+                "Success",
                 f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
             )
 
@@ -761,7 +761,7 @@ class MPRViewer(QMainWindow):
         if not self.segmentation_data_list:
             QMessageBox.information(self, "No Segmentation", "No segmentation files are currently loaded.")
             return
-        
+
         reply = QMessageBox.question(
             self,
             "Delete Segmentation",
@@ -769,17 +769,17 @@ class MPRViewer(QMainWindow):
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
-        
+
         if reply == QMessageBox.Yes:
             # Clear all segmentation data
             self.segmentation_files = []
             self.segmentation_data_list = []
             self.original_segmentation_data_list = []
             self.segmentation_visible = False
-            
+
             # Update all views to remove overlays
             self.update_all_views()
-            
+
             QMessageBox.information(
                 self,
                 "Success",
@@ -819,13 +819,13 @@ class MPRViewer(QMainWindow):
     def add_segmentation_overlay(self, base_pixmap, view_type):
         """Adds red outline overlay from segmentation data to the pixmap."""
         from PyQt5.QtGui import QPainter, QPen
-        
+
         # Convert pixmap to QImage for painting
         image = base_pixmap.toImage()
         painter = QPainter(image)
         pen = QPen(QColor(255, 0, 0), 2)  # Red color, 2px width
         painter.setPen(pen)
-        
+
         # Get the current slice for this view
         if view_type == 'axial':
             slice_idx = self.slices['axial']
@@ -840,7 +840,7 @@ class MPRViewer(QMainWindow):
         else:
             painter.end()
             return base_pixmap
-        
+
         # Process each loaded segmentation
         for seg_data in self.segmentation_data_list:
             # Extract the slice from segmentation data
@@ -853,31 +853,31 @@ class MPRViewer(QMainWindow):
             elif view_type == 'sagittal':
                 seg_slice = seg_data[slice_idx, :, :]
                 seg_slice = np.rot90(seg_slice)
-            
+
             # Find edges/contours in the segmentation
             from scipy import ndimage
-            
+
             # Create binary mask
             mask = seg_slice > 0.5
-            
+
             if not mask.any():
                 continue
-            
+
             # Find edges using morphological operations
             eroded = ndimage.binary_erosion(mask)
             edges = mask & ~eroded
-            
+
             # Scale factor to match pixmap size
             scale_y = base_pixmap.height() / edges.shape[0]
             scale_x = base_pixmap.width() / edges.shape[1]
-            
+
             # Draw the edges
             edge_coords = np.argwhere(edges)
             for y, x in edge_coords:
                 scaled_x = int(x * scale_x)
                 scaled_y = int(y * scale_y)
                 painter.drawPoint(scaled_x, scaled_y)
-        
+
         painter.end()
         return QPixmap.fromImage(image)
 
@@ -942,7 +942,7 @@ class MPRViewer(QMainWindow):
                     norm_x, norm_y = 0.5, 0.5
 
                 label.set_normalized_crosshair(norm_x, norm_y)
-                
+
                 # For oblique view, hide all crosshair elements (lines and center point)
                 if view_type == 'oblique':
                     label.show_only_center_point = False
@@ -950,7 +950,7 @@ class MPRViewer(QMainWindow):
                 else:
                     label.show_only_center_point = False
                     label.hide_crosshair_completely = False
-            
+
             if view_type == 'coronal' and self.oblique_view_enabled:
                 label.oblique_axis_angle = self.oblique_axis_angle
                 label.oblique_axis_visible = self.oblique_axis_visible
@@ -967,10 +967,10 @@ class MPRViewer(QMainWindow):
         """Draw the oblique axis on the frontal view"""
         if view_type != 'coronal' or not self.oblique_axis_visible:
             return
-        
+
         if not isinstance(label, SliceViewLabel):
             return
-        
+
         label.oblique_axis_angle = self.oblique_axis_angle
         label.oblique_axis_visible = True
         label.update()
@@ -978,18 +978,18 @@ class MPRViewer(QMainWindow):
     def update_segmentation_view(self):
         if 'segmentation' not in self.view_labels:
             return
-        
+
         label = self.view_labels['segmentation']
-        
+
         # If no segmentation loaded, show the default text
         if not self.segmentation_data_list:
             label.setText("Segmentation View\n\n[Add your segmentation data here]")
             return
-        
+
         # Determine which view to show based on the last interacted view
         # Default to axial if none specified
         source_view = getattr(self, '_last_segmentation_source_view', 'axial')
-            
+
         # Get the current slice for the source view
         if source_view == 'axial':
             slice_idx = self.slices['axial']
@@ -1030,28 +1030,28 @@ class MPRViewer(QMainWindow):
             elif view_type == 'sagittal':
                 seg_slice = seg_data[slice_idx, :, :]
                 seg_slice = np.rot90(seg_slice)
-            
+
             # Find edges/contours in the segmentation
             from scipy import ndimage
-            
+
             # Create binary mask
             mask = seg_slice > 0.5
-            
+
             if not mask.any():
                 continue
-            
+
             # Find edges using morphological operations
             eroded = ndimage.binary_erosion(mask)
             edges = mask & ~eroded
-            
+
             # Scale factor to match the correct dimensions
             scale_y = correct_height / edges.shape[0]
             scale_x = correct_width / edges.shape[1]
-            
+
             # Draw the edges in red
             pen = QPen(QColor(255, 0, 0), 2)  # Red color, 2px width
             painter.setPen(pen)
-            
+
             edge_coords = np.argwhere(edges)
             for y, x in edge_coords:
                 scaled_x = int(x * scale_x)
@@ -1324,7 +1324,7 @@ class MPRViewer(QMainWindow):
         rotate_btn = self.findChild(QPushButton, "tool_btn_1_1")
         if rotate_btn:
             rotate_btn.clicked.connect(self.handle_rotate_mode_toggle)
-        
+
         tools_main_layout.addWidget(tools_grid_widget)
 
         # Add the Reset button
