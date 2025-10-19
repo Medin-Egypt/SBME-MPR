@@ -683,17 +683,17 @@ class MPRViewer(QMainWindow):
                 orientation, confidence = od.predict_dicom_image(middle_slice_data)
                 orientation_info = f"\n\nDetected Orientation: {orientation}"
 
+                meta_info = f"Body Part Examined: {self.metadata.get('BodyPartExamined')}\nStudy Description: {self.metadata.get('StudyDescription')}"
+
                 self.show_main_views_initially()
                 self.update_all_views()  # Triggers uniform default scale calculation
 
                 QMessageBox.information(
                     self, "Success",
-                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n"
+                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{meta_info}"
                 )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
-                import traceback
-                print(traceback.print_exc())
 
     def load_segmentation_files(self):
         """Opens a file dialog to select multiple NIfTI segmentation files."""
