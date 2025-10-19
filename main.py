@@ -585,7 +585,7 @@ class MPRViewer(QMainWindow):
         # Get list of currently visible main views
         views_to_check = []
         if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
-            views_to_check.extend(['frontal', 'sagittal', 'axial'])
+            views_to_check.extend(['coronal', 'sagittal', 'axial'])
         if self.oblique_view_enabled:
             views_to_check.append('oblique')
 
@@ -594,12 +594,10 @@ class MPRViewer(QMainWindow):
             if not label or not label.isVisible() or label.width() < 10 or label.height() < 10:
                 continue
 
-            view_type = 'coronal' if view_name == 'frontal' else view_name
-
             # --- SIMPLIFIED LOGIC ---
             # Get pre-calculated, aspect-ratio-corrected dimensions
-            if view_type in self.pixel_dims:
-                img_w, img_h = self.pixel_dims[view_type]
+            if view_name in self.pixel_dims:
+                img_w, img_h = self.pixel_dims[view_name]
             else:  # Fallback for oblique or other views
                 img_w, img_h = self.pixel_dims['axial']
 
@@ -616,7 +614,7 @@ class MPRViewer(QMainWindow):
         views_to_update = []
         if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
             views_to_update.extend([
-                ('frontal', 'coronal'), ('sagittal', 'sagittal'), ('axial', 'axial')
+                ('coronal', 'coronal'), ('sagittal', 'sagittal'), ('axial', 'axial')
             ])
         if self.oblique_view_enabled:
             views_to_update.append(('oblique', 'oblique'))
@@ -796,7 +794,7 @@ class MPRViewer(QMainWindow):
         """Show/hide oblique axis based on rotate mode and current view"""
         if self.oblique_view_enabled:
             # Just update the view to show/hide the axis based on rotate mode
-            self.update_view('frontal', 'coronal', sync_crosshair=True)
+            self.update_view('coronal', 'coronal', sync_crosshair=True)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Resize:
@@ -964,7 +962,7 @@ class MPRViewer(QMainWindow):
             label.setPixmap(scaled)
 
     def draw_oblique_axis(self, label, view_type):
-        """Draw the oblique axis on the frontal view"""
+        """Draw the oblique axis on the coronal view"""
         if view_type != 'coronal' or not self.oblique_axis_visible:
             return
 
@@ -1078,10 +1076,7 @@ class MPRViewer(QMainWindow):
 
         visible_views = [name for name, panel in self.view_panels.items() if panel.isVisible()]
         for view_name in visible_views:
-            view_type = view_name
-            if view_name == 'frontal':
-                view_type = 'coronal'
-            self.update_view(view_name, view_type, sync_crosshair=True)
+            self.update_view(view_name, view_name, sync_crosshair=True)
 
     def maximize_view(self, view_name):
         if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled):
@@ -1111,7 +1106,7 @@ class MPRViewer(QMainWindow):
 
         # Panels list to restore the grid layout structure
         panels = [
-            ("Frontal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
+            ("Coronal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
             ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
             ("Segmentation", 'segmentation', 1, 1)
         ]
@@ -1143,7 +1138,7 @@ class MPRViewer(QMainWindow):
         self.restore_views()
 
         for view_name, panel in self.view_panels.items():
-            if view_name in ['frontal', 'sagittal', 'axial']:
+            if view_name in ['coronal', 'sagittal', 'axial']:
                 panel.show()
                 # Update is handled by update_visible_views in the end
             else:
@@ -1163,7 +1158,7 @@ class MPRViewer(QMainWindow):
         self.findChild(QPushButton, "mode_btn_1").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
-            if view_name in ['frontal', 'sagittal', 'axial']:
+            if view_name in ['coronal', 'sagittal', 'axial']:
                 panel.show()
             else:
                 panel.hide()
@@ -1189,7 +1184,7 @@ class MPRViewer(QMainWindow):
         self.findChild(QPushButton, "mode_btn_1").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
-            if view_name in ['frontal', 'sagittal', 'axial', 'oblique']:
+            if view_name in ['coronal', 'sagittal', 'axial', 'oblique']:
                 panel.show()
                 if view_name == 'oblique':
                     # Ensure oblique is placed in 1,1
@@ -1215,7 +1210,7 @@ class MPRViewer(QMainWindow):
         self.findChild(QPushButton, "mode_btn_2").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
-            if view_name in ['frontal', 'sagittal', 'axial', 'segmentation']:
+            if view_name in ['coronal', 'sagittal', 'axial', 'segmentation']:
                 panel.show()
                 if view_name == 'segmentation':
                     # Ensure segmentation is placed in 1,1
@@ -1406,7 +1401,7 @@ class MPRViewer(QMainWindow):
         self.viewing_grid.setContentsMargins(0, 0, 0, 0)
 
         panels = [
-            ("Frontal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
+            ("Coronal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
             ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
             ("Segmentation", 'segmentation', 1, 1)
         ]
@@ -1425,7 +1420,7 @@ class MPRViewer(QMainWindow):
             title_bar_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
             color_key = view_type
-            if title.lower() == 'frontal':
+            if title.lower() == 'coronal':
                 color_key = 'coronal'
 
             if color_key in self.view_colors:
@@ -1446,8 +1441,7 @@ class MPRViewer(QMainWindow):
             panel_layout.addWidget(title_bar_widget)
 
             if view_type != 'segmentation':
-                data_view_type = 'coronal' if title.lower() == 'frontal' else view_type
-                view_area = SliceViewLabel(self, data_view_type, title)
+                view_area = SliceViewLabel(self, view_type, title)
             else:
                 view_area = QLabel()
                 view_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
