@@ -81,7 +81,7 @@ class SliceCropDialog(QDialog):
         self.end_slice.setRange(1, max_slice_count)
         self.end_slice.setValue(max_slice_count)
 
-        form_layout.addRow("Crop slices from:", self.start_slice)
+        form_layout.addRow("Show slices from:", self.start_slice)
         form_layout.addRow("to:", self.end_slice)
 
         layout.addLayout(form_layout)
