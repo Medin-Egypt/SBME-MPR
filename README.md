@@ -56,7 +56,7 @@ Loading and visualizing medical imaging files
 <table>
 <tr>
 <td align="center" width="33%">
-<img src="path/to/slide-icon.png" width="60"/><br/>
+<img src="https://github.com/MhmdSheref/CUFE-MPR/blob/4ef8df0f612ae9ece7905b5f6cc6fceff00e2f1a/assets/icon1.png" width="60"/><br/>
 <b>Slide/Crosshair Mode</b><br/>
 <sub>Navigate through slices with synchronized crosshairs across all views</sub>
 </td>
