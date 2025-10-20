@@ -298,3 +298,39 @@ QDialog QLabel {
     color: #E2E8F0;
     background-color: transparent;
 }
+/* --- Segmentation View Dropdown Styling --- */
+QComboBox#segmentation_view_dropdown {
+    background-color: #2D3748;
+    color: #E2E8F0;
+    border: 1px solid #4A5568;
+    border-radius: 5px;
+    padding: 5px;
+    min-height: 25px;
+}
+
+QComboBox#segmentation_view_dropdown::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox#segmentation_view_dropdown::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid #E2E8F0;
+    width: 0;
+    height: 0;
+}
+
+QComboBox#segmentation_view_dropdown:hover {
+    background-color: #4A5568;
+    border: 1px solid #63B3ED;
+}
+
+QComboBox#segmentation_view_dropdown QAbstractItemView {
+    background-color: #2D3748;
+    color: #E2E8F0;
+    selection-background-color: #63B3ED;
+    selection-color: #1A202C;
+    border: 1px solid #4A5568;
+}

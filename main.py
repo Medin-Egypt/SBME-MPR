@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (
     QFrame, QGroupBox, QSizePolicy, QButtonGroup, QFileDialog, QMessageBox,
     QDialog, QFormLayout, QSpinBox, QDialogButtonBox
 )
+from PyQt5.QtWidgets import QComboBox
 from PyQt5.QtCore import Qt, QSize, QEvent, QTimer, QPoint
 from PyQt5.QtGui import QPixmap, QIcon, QImage, QColor
 from h5py._hl import dims
@@ -156,6 +157,8 @@ class MPRViewer(QMainWindow):
         self.segmentation_data_list = []  # List of numpy arrays for each segmentation
         self.original_segmentation_data_list = []
         self.segmentation_visible = False  # Whether to show segmentation overlays
+        self.segmentation_view_selector = None  # Will hold the QComboBox
+        self.current_segmentation_source = 'axial'  # Default view to show
 
         self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
 
@@ -973,9 +976,8 @@ class MPRViewer(QMainWindow):
             label.setText("Segmentation View\n\n[Add your segmentation data here]")
             return
 
-        # Determine which view to show based on the last interacted view
-        # Default to axial if none specified
-        source_view = getattr(self, '_last_segmentation_source_view', 'axial')
+        # Use the dropdown selection to determine which view to show
+        source_view = self.current_segmentation_source
 
         # Get the current slice for the source view
         if source_view == 'axial':
@@ -1058,6 +1060,12 @@ class MPRViewer(QMainWindow):
         )
 
         label.setPixmap(scaled_pixmap)
+
+    def on_segmentation_view_changed(self, view_name):
+        """Callback when the segmentation view dropdown changes."""
+        self.current_segmentation_source = view_name.lower()
+        if self.segmentation_view_enabled:
+            self.update_segmentation_view()
 
     def update_visible_views(self):
         # When resizing, recalculate the uniform scale and then update all visible views
@@ -1426,6 +1434,18 @@ class MPRViewer(QMainWindow):
             title_lbl = QLabel(title)
             title_lbl.setObjectName(f"view_title_{title.lower()}")
             title_bar_layout.addWidget(title_lbl)
+
+            # Add dropdown for segmentation view
+            if title.lower() == 'segmentation':
+                title_bar_layout.addStretch()
+                
+                self.segmentation_view_selector = QComboBox()
+                self.segmentation_view_selector.setObjectName("segmentation_view_dropdown")
+                self.segmentation_view_selector.addItems(["Axial", "Coronal", "Sagittal"])
+                self.segmentation_view_selector.setCurrentText("Axial")
+                self.segmentation_view_selector.setFixedWidth(100)
+                self.segmentation_view_selector.currentTextChanged.connect(self.on_segmentation_view_changed)
+                title_bar_layout.addWidget(self.segmentation_view_selector)
 
             panel_layout.addWidget(title_bar_widget)
 
