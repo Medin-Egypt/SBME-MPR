@@ -49,7 +49,7 @@ Loading and visualizing medical imaging files
 
 </div> 
 
-### 🛠️ Interactive Tools
+###  Interactive Tools
 
 <div align="center">
 
@@ -92,7 +92,7 @@ Loading and visualizing medical imaging files
 
 </div>
 
-### 🚀 Advanced Features
+###  Advanced Features
 
 - **Segmentation Overlay**: Load multiple segmentation files with edge detection and red outline visualization
 - **Aspect Ratio Correction**: Automatic voxel spacing-based aspect ratio correction for accurate anatomical representation
