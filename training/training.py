@@ -1,99 +1,130 @@
 import tensorflow as tf
-import numpy as np
+from tensorflow.keras import layers, models
 import os
 
-# --- Configuration ---
-IMAGE_SIZE = (224, 224)
+# Configuration
+IMG_SIZE = 224
 BATCH_SIZE = 32
-DATA_DIR = 'data'
-NUM_CLASSES = 3  # Make sure this matches the number of folders in DATA_DIR
-EPOCHS = 10      # Start with 10 and increase if needed
+EPOCHS = 20
+LEARNING_RATE = 0.001
 
-# --- 1. Load Data ---
-# Create datasets from the directory structure
-# It will automatically infer class names from folder names
-# We split the data into 80% for training and 20% for validation
-print("Loading and preparing datasets...")
-train_dataset = tf.keras.utils.image_dataset_from_directory(
-    DATA_DIR,
-    validation_split=0.2,
-    subset="training",
-    seed=123,
-    image_size=IMAGE_SIZE,
+# Set paths - adjust these to your actual paths
+TRAIN_DIR = 'nifti_slices'  # Should contain 3 subdirectories (one per class)
+# VAL_DIR = 'val'  # Optional validation set
+MODEL_SAVE_PATH = 'model.keras'
+
+# Data augmentation for training
+train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+    rescale=1. / 255,
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    horizontal_flip=True,
+    zoom_range=0.2,
+    validation_split=0.2  # Use if you don't have separate validation folder
+)
+
+# Validation data (no augmentation)
+val_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+    rescale=1. / 255
+)
+
+# Load training data
+train_generator = train_datagen.flow_from_directory(
+    TRAIN_DIR,
+    target_size=(IMG_SIZE, IMG_SIZE),
     batch_size=BATCH_SIZE,
-    label_mode='int' # Use 'int' for SparseCategoricalCrossentropy
+    class_mode='categorical',
+    subset='training'
 )
 
-validation_dataset = tf.keras.utils.image_dataset_from_directory(
-    DATA_DIR,
-    validation_split=0.2,
-    subset="validation",
-    seed=123,
-    image_size=IMAGE_SIZE,
+# Load validation data
+val_generator = train_datagen.flow_from_directory(
+    TRAIN_DIR,
+    target_size=(IMG_SIZE, IMG_SIZE),
     batch_size=BATCH_SIZE,
-    label_mode='int'
+    class_mode='categorical',
+    subset='validation'
 )
 
-# Store the class names for later use in prediction
-class_names = train_dataset.class_names
-print(f"Found classes: {class_names}")
-
-# Configure dataset for performance
-AUTOTUNE = tf.data.AUTOTUNE
-train_dataset = train_dataset.prefetch(buffer_size=AUTOTUNE)
-validation_dataset = validation_dataset.prefetch(buffer_size=AUTOTUNE)
+# Print class indices
+print("Class mapping:", train_generator.class_indices)
 
 
-# --- 2. Build the Model (Transfer Learning) ---
-print("Building model...")
-# Load MobileNetV2, a powerful and lightweight pre-trained model
-# include_top=False removes the original classification layer
-base_model = tf.keras.applications.MobileNetV2(
-    input_shape=(*IMAGE_SIZE, 3),
-    include_top=False,
-    weights='imagenet'
-)
+# Build lightweight model
+def create_model(num_classes=3):
+    model = models.Sequential([
+        # Convolutional layers
+        layers.Conv2D(32, (3, 3), activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, 3)),
+        layers.MaxPooling2D((2, 2)),
 
-# Freeze the base model's layers so we don't alter its learned weights
-base_model.trainable = False
+        layers.Conv2D(64, (3, 3), activation='relu'),
+        layers.MaxPooling2D((2, 2)),
 
-# Create our new model on top of the base model
-inputs = tf.keras.Input(shape=(*IMAGE_SIZE, 3))
-# The mobilenet_v2.preprocess_input function is a requirement for this model
-x = tf.keras.applications.mobilenet_v2.preprocess_input(inputs)
-x = base_model(x, training=False)
-x = tf.keras.layers.GlobalAveragePooling2D()(x)
-x = tf.keras.layers.Dropout(0.2)(x)  # Regularization
-outputs = tf.keras.layers.Dense(NUM_CLASSES, activation='softmax')(x) # Output layer for our 3 classes
+        layers.Conv2D(128, (3, 3), activation='relu'),
+        layers.MaxPooling2D((2, 2)),
 
-model = tf.keras.Model(inputs, outputs)
+        layers.Conv2D(128, (3, 3), activation='relu'),
+        layers.MaxPooling2D((2, 2)),
 
-# --- 3. Compile the Model ---
-print("Compiling model...")
+        # Dense layers
+        layers.Flatten(),
+        layers.Dropout(0.5),
+        layers.Dense(256, activation='relu'),
+        layers.Dropout(0.3),
+        layers.Dense(num_classes, activation='softmax')
+    ])
+    return model
+
+
+# Create and compile model
+model = create_model(num_classes=3)
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+    optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
+    loss='categorical_crossentropy',
     metrics=['accuracy']
 )
 
+# Print model summary
 model.summary()
 
-# --- 4. Train the Model ---
-print("\nStarting training...")
+# Callbacks
+callbacks = [
+    tf.keras.callbacks.ModelCheckpoint(
+        MODEL_SAVE_PATH,
+        save_best_only=True,
+        monitor='val_accuracy',
+        mode='max',
+        verbose=1
+    ),
+    tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        patience=5,
+        restore_best_weights=True,
+        verbose=1
+    ),
+    tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=3,
+        min_lr=1e-7,
+        verbose=1
+    )
+]
+
+# Train model
 history = model.fit(
-    train_dataset,
-    validation_data=validation_dataset,
-    epochs=EPOCHS
+    train_generator,
+    epochs=EPOCHS,
+    validation_data=val_generator,
+    callbacks=callbacks,
+    verbose=1
 )
-print("Training finished.")
 
+# Save final model
+model.save('model_final.keras')
+print(f"\nTraining complete! Model saved to {MODEL_SAVE_PATH}")
 
-# --- 5. Save the Model ---
-# The modern .keras format is recommended
-model.save('my_image_classifier.keras')
-print(f"\nModel saved successfully as 'my_image_classifier.keras'")
-# Also save class names for easy lookup during prediction
-with open('class_names.txt', 'w') as f:
-    for item in class_names:
-        f.write("%s\n" % item)
-print("Class names saved to 'class_names.txt'")
+# Print final metrics
+print(f"\nFinal Training Accuracy: {history.history['accuracy'][-1]:.4f}")
+print(f"Final Validation Accuracy: {history.history['val_accuracy'][-1]:.4f}")

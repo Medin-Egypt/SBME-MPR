@@ -11,6 +11,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QSize, QEvent, QTimer, QPoint
 from PyQt5.QtGui import QPixmap, QIcon, QImage, QColor
+from h5py._hl import dims
+
 import utils.loader as loader
 import utils.detect_orientation as od
 from utils.SliceViewLabel import  SliceViewLabel
@@ -679,9 +681,8 @@ class MPRViewer(QMainWindow):
                 self.reset_all_zooms()  # Resets global zoom factor
                 self.reset_rotation()
 
-                middle_slice_data = self.data[:, :, self.slices['axial']]
-                orientation, confidence = od.predict_dicom_image(middle_slice_data)
-                orientation_info = f"\n\nDetected Orientation: {orientation}"
+                orientation, confidence, _ = od.predict_middle_dicom_from_folder(folder_path)
+                orientation_info = f"\n\nDetected Orientation: {orientation} with confidence: {(confidence*100):.2f}%"
 
                 meta_info = f"Body Part Examined: {self.metadata.get('BodyPartExamined')}\nStudy Description: {self.metadata.get('StudyDescription')}"
 
@@ -900,18 +901,6 @@ class MPRViewer(QMainWindow):
             view_type=view_type,
             norm_coords=self.norm_coords  # Pass normalized coordinates
         )
-
-        # Determine the target size for the unscaled image pixmap
-        # This size is based on the original data shape to allow for correct aspect ratio calculation.
-        # DIMS are (Sagittal, Coronal, Axial)
-        if view_type == 'axial' or view_type == 'oblique':
-            pixmap_w, pixmap_h = self.dims[0], self.dims[1]  # Sagittal (x), Coronal (y)
-        elif view_type == 'coronal':
-            pixmap_w, pixmap_h = self.dims[0], self.dims[2]  # Sagittal (x), Axial (y)
-        elif view_type == 'sagittal':
-            pixmap_w, pixmap_h = self.dims[1], self.dims[2]  # Coronal (x), Axial (y)
-        else:
-            return  # Should not happen
 
         # Scale the numpy data to the target size before converting to QPixmap
         # This is a simplification. A proper MPR would handle image size based on voxel size.
