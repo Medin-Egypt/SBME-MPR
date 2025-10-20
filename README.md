@@ -10,9 +10,9 @@ The application supports both **NIfTI** and **DICOM** file formats, offering adv
 * Segmentation overlay
 * Oblique slicing
 * AI-powered orientation detection
-
+  
+ ![](https://github.com/MhmdSheref/CUFE-MPR/blob/10a433384a0e6b7e8cadd6f265bdb146c25e09e1/assets/Overview.png)
 <div align="center">
-  <br>
   <em>Main interface showing simultaneous multi-planar views</em>
 </div>
 
