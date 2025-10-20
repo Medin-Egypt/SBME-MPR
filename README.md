@@ -195,15 +195,15 @@ Cropping and exporting processed data
 
 ## Contributors
 
-** Team Members**
-  - **Mohamed Sherif** 
-  - **Bassel Mostafa**
-  - **Mahmoud Zahran** 
-  - **Rawan Kotb** 
+**Team Members**
+  * **Mohamed Sherif** 
+  * **Bassel Mostafa**
+  * **Mahmoud Zahran** 
+  * **Rawan Kotb** 
 
  **Supervised By**     
-         - **Prof. Tamer Basha**     
-         - **Eng. Alaa Tarek**     
+         * **Prof. Tamer Basha**     
+         * **Eng. Alaa Tarek**     
 
 
 
