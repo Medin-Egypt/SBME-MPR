@@ -44,11 +44,94 @@ Loading and visualizing medical imaging files
 
 | Main Views | Oblique View | Segmentation View |
 |:----------:|:------------:|:-----------------:|
-| ![Main Views](path/to/main-views.png) | ![Oblique View](path/to/oblique-view.png) | ![Segmentation](path/to/segmentation-view.png) |
+| ![Main Views](path/to/main-views.png) | ![Oblique View](path/to/oblique-view.png) | ![Segmentation](https://github.com/MhmdSheref/CUFE-MPR/blob/3d7abc5bebfb35b35b1d961f105538fb948591db/assets/Segmentaion%20view.png) |
 | Simultaneous axial, coronal, and sagittal visualization | Custom oblique plane with rotation | Overlay segmentation masks with edge detection |
 
 </div> 
 
+# Requirements
+```
+tensorflow>=2.8.0
+numpy>=1.21.0
+nibabel>=3.2.0
+pydicom>=2.3.0
+PyQt5>=5.15.0
+scipy>=1.7.0
+```
+# Example Workflow
+**1) Load Medical Data**        
+Click **"Open NIfTI File"** or **"Open DICOM Folder"** to import your medical imaging data.
+**The application automatically:**
+
+* Detects orientation (for DICOM files)
+* Calculates optimal window/level settings
+* Applies aspect ratio correction
+
+<div align="center">
+Show Image
+Loading a DICOM series
+</div> 
+
+**2) Navigate and Explore**
+Use intuitive controls to explore your data:
+
+* **Mouse wheel:** Scroll through slices
+* **Click and drag:** Move crosshair to specific locations
+* **Double-click:** Maximize any view for detailed inspection
+
+<div align="center">
+Show Image
+Navigating through the volume
+</div> 
+
+**3) Adjust Visualization**
+Fine-tune the display for optimal visualization:
+
+* **Contrast Mode:** Drag to adjust window/level
+* **Zoom/Pan Mode:** Wheel to zoom, drag to pan
+* **Reset:** Restore original settings anytime
+
+<div align="center">
+Show Image
+Adjusting contrast and zoom
+</div> 
+
+**4) Work with Segmentations**
+**Load and visualize segmentation masks:**
+
+* Click "Load Segmentation" to add masks
+* Switch to "Segmentation View" for dedicated visualization
+* Overlays appear as red outlines in all views
+
+<div align="center">
+Show Image
+Segmentation overlay visualization
+</div> 
+
+**5) Use Oblique Slicing**
+**Create custom viewing angles:**
+
+* Switch to "Oblique View" mode
+* Enable "Rotate Mode"
+* Drag the yellow axis handle to adjust angle
+* Oblique view updates in real-time
+
+<div align="center">
+Show Image
+Interactive oblique plane rotation
+</div> 
+
+**6) Crop and Export**
+**Process and export your data:**
+
+* Click the Crop tool to select slice range
+* Choose export format (NIfTI or DICOM)
+* All metadata and modifications are preserved
+
+<div align="center">
+Show Image
+Cropping and exporting processed data
+</div>
 
 
 ## 👩‍💻 Contributors
