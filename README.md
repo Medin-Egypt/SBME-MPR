@@ -193,15 +193,15 @@ Cropping and exporting processed data
 </div>
 
 
-## 👩‍💻 Contributors
+## Contributors
 
-**🧑‍🤝‍🧑 Team Members**
+** Team Members**
   - **Mohamed Sherif** 
   - **Bassel Mostafa**
   - **Mahmoud Zahran** 
   - **Rawan Kotb** 
 
- **🧭 Supervised By**     
+ **Supervised By**     
          - **Prof. Tamer Basha**     
          - **Eng. Alaa Tarek**     
 
