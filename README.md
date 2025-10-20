@@ -17,36 +17,38 @@ The application supports both **NIfTI** and **DICOM** file formats, offering adv
 </div>
 
 This tool is designed for **medical professionals, researchers, and students** working with volumetric medical imaging data, providing intuitive controls and powerful visualization features for comprehensive data analysis.
-# ⚙️ Features
-• **Data Import**   
-Load **NIfTI (.nii, .nii.gz)** files or **DICOM** folders (multi-slice series)  
+#  Features
+**File Support**  
 
-• **Multi-Planar Views**       
-View synchronized **Axial, Coronal, Sagittal**, and **Oblique** slices simultaneously. 
+**NIfTI Format:** Load and visualize `.nii` and`.nii.gz` files 
 
-• **Interactive Tools**         
-Zoom, Pan, Crop, and adjust Contrast dynamically using the mouse.          
+**DICOM Format:** Import entire `.DICOM` series from folders  
 
-• **Cine Mode**          
-Automatically scroll through slices (like a playback animation).      
+**Export Capabilities:** Export processed volumes to both **NIfTI** and **DICOM** formats with full metadata preservation         
+<div align="center">
+Show Image 
+  </div>
+<div align="center">                                  
+Loading and visualizing medical imaging files                             
+</div>
 
-• **Crosshair Synchronization**       
-Crosshair moves in real-time across all viewing planes.        
+**Viewing Modes**
 
-• **Automatic Orientation & Intensity Handling**           
-Uses DICOM **WindowCenter/WindowWidth** and spacing metadata for accurate reconstruction.       
+**3 Main Views:** Simultaneous axial, coronal, and sagittal plane visualization
+**Oblique View:** Custom oblique plane slicing with interactive rotation controls
+**Segmentation View:** Overlay and visualize segmentation masks with edge detection
 
-• **3D Transformations**        
-Rotation and oblique slicing supported for advanced visualization.       
+<div align="center">
 
-• **Image Correction**        
-Automatic left–right flipping and sorting for proper anatomical alignment.       
+# Viewing Modes
 
-• **Modern Dark-Mode UI**         
-Custom QSS styling with clean design and smooth contrast.        
+| Main Views | Oblique View | Segmentation View |
+|:----------:|:------------:|:-----------------:|
+| ![Main Views](path/to/main-views.png) | ![Oblique View](path/to/oblique-view.png) | ![Segmentation](path/to/segmentation-view.png) |
+| Simultaneous axial, coronal, and sagittal visualization | Custom oblique plane with rotation | Overlay segmentation masks with edge detection |
 
-• **Export**       
-Save processed data back to **DICOM** or **NIfTI** format.        
+</div>
+  
 ## ⚙️ Tech Stack  
 
 | Layer | Technology / Library | Purpose |
