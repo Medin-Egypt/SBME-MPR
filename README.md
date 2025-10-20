@@ -49,6 +49,65 @@ Loading and visualizing medical imaging files
 
 </div> 
 
+### 🛠️ Interactive Tools
+
+<div align="center">
+
+<table>
+<tr>
+<td align="center" width="33%">
+<img src="path/to/slide-icon.png" width="60"/><br/>
+<b>Slide/Crosshair Mode</b><br/>
+<sub>Navigate through slices with synchronized crosshairs across all views</sub>
+</td>
+<td align="center" width="33%">
+<img src="path/to/contrast-icon.png" width="60"/><br/>
+<b>Contrast Mode</b><br/>
+<sub>Adjust window/level settings for optimal visualization</sub>
+</td>
+<td align="center" width="33%">
+<img src="path/to/zoom-icon.png" width="60"/><br/>
+<b>Zoom/Pan Mode</b><br/>
+<sub>Coordinated zooming and panning across all views</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+<img src="path/to/crop-icon.png" width="60"/><br/>
+<b>Crop Mode</b><br/>
+<sub>Slice-based cropping to focus on regions of interest</sub>
+</td>
+<td align="center" width="33%">
+<img src="path/to/rotate-icon.png" width="60"/><br/>
+<b>Rotate Mode</b><br/>
+<sub>Interactive oblique plane rotation with visual indicators</sub>
+</td>
+<td align="center" width="33%">
+<img src="path/to/cine-icon.png" width="60"/><br/>
+<b>Cine Mode</b><br/>
+<sub>Automated slice-by-slice playback for dynamic viewing</sub>
+</td>
+</tr>
+</table>
+
+</div>
+
+### 🚀 Advanced Features
+
+- **Segmentation Overlay**: Load multiple segmentation files with edge detection and red outline visualization
+- **Aspect Ratio Correction**: Automatic voxel spacing-based aspect ratio correction for accurate anatomical representation
+- **AI Orientation Detection**: TensorFlow-based model for automatic anatomical orientation classification
+- **Coordinated Zoom**: Uniform scaling across all views maintaining spatial relationships
+- **Custom Title Bar**: Modern, frameless window design with drag, minimize, maximize, and restore functionality
+
+<div align="center">
+
+![Advanced Features Demo](path/to/advanced-features-demo.gif)
+
+*Demonstration of segmentation overlay and oblique slicing*
+
+</div>
+
 # Requirements
 ```
 tensorflow>=2.8.0
