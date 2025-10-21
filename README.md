@@ -203,11 +203,11 @@ Cropping and exporting processed data
 </td>
 
 <td align="center">
-<a href="">
-<img src="https://github.com/bassel-mostafa.png" width="100px;" alt="Bassel Mostafa"/><br />
+<a href="https://github.com/BasselM0stafa">
+<img src="https://github.com/BasselM0stafa.png" width="100px;" alt="BasselM0stafa"/><br />
 <sub><b>Bassel Mostafa</b></sub>
 </a><br />
-<a href="https://github.com/bassel-mostafa">GitHub</a>
+<a href="https://github.com/BasselM0stafa">GitHub</a>
 </td>
 
 <td align="center">
@@ -219,11 +219,11 @@ Cropping and exporting processed data
 </td>
 
 <td align="center">
-<a href="">
-<img src="https://github.com/rawan-kotb.png" width="100px;" alt="Rawan Kotb"/><br />
+<a href="https://github.com/rwan01281966344kotb-droid">
+<img src="https://github.com/rwan01281966344kotb-droid.png" width="100px;" alt="rwan01281966344kotb-droid"/><br />
 <sub><b>Rawan Kotb</b></sub>
 </a><br />
-<a href="https://github.com/rawan-kotb">GitHub</a>
+<a href="https://github.com/rwan01281966344kotb-droid">GitHub</a>
 </td>
 </tr>
 </table>
