@@ -148,9 +148,22 @@ Fine-tune the display for optimal visualization:
 * **Reset:** Restore original settings anytime
 
 <div align="center">
-Show Image
-Adjusting contrast and zoom
-</div> 
+
+  <table>
+    <tr>
+      <td align="center">
+        <img src="assets/Contrast tool.gif" width="300"/><br>
+        <b>Contrast Mode</b>
+      </td>
+      <td align="center">
+        <img src="URL_OF_SECOND_GIF.gif" width="300"/><br>
+        <b>Zoom/Pan Mode</b>
+      </td>
+    </tr>
+  </table>
+
+</div>
+
 
 **4) Work with Segmentations**
 **Load and visualize segmentation masks:**
