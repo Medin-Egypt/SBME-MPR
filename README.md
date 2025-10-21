@@ -134,8 +134,9 @@ Use intuitive controls to explore your data:
 * **Click and drag:** Move crosshair to specific locations
 * **Double-click:** Maximize any view for detailed inspection
 
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/b598a1373063498c485caae627d40ba25aa1c039/assets/Navigation%20tool.gif)
+
 <div align="center">
-Show Image
 Navigating through the volume
 </div> 
 
@@ -183,8 +184,9 @@ Interactive oblique plane rotation
 * Choose export format (NIfTI or DICOM)
 * All metadata and modifications are preserved
 
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/b598a1373063498c485caae627d40ba25aa1c039/assets/Crop%20tool.gif)
 <div align="center">
-Show Image
+
 Cropping and exporting processed data
 </div>
 
