@@ -57,7 +57,7 @@ Loading and visualizing medical imaging files
 <td align="center" width="33%">
 <img src="assets/icon1.png" width="60"/><br/>
 <b>Slide/Crosshair Mode</b><br/>
-<sub>Navigate through slices across all views.</sub>
+<sub>Navigate through slices with synchronized crosshairs across all views</sub>
 </td>
 <td align="center" width="33%">
 <img src="assets/icon2.png" width="60"/><br/>
@@ -84,7 +84,7 @@ Loading and visualizing medical imaging files
 <td align="center" width="33%">
 <img src="assets/icon6.png" width="60"/><br/>
 <b>Cine Mode</b><br/>
-<sub>Automated slice-by-slice playback</sub>
+<sub>Automated slice-by-slice playback for dynamic viewing</sub>
 </td>
 </tr>
 </table>
