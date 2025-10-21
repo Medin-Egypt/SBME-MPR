@@ -159,8 +159,8 @@ Adjusting contrast and zoom
 * Switch to "Segmentation View" for dedicated visualization
 * Overlays appear as red outlines in all views
 
+  ![](https://github.com/MhmdSheref/CUFE-MPR/blob/832743130d833ccc8c2c38e6fe9c97585858b586/assets/Segmentaion%20view.png)
 <div align="center">
-Show Image
 Segmentation overlay visualization
 </div> 
 
