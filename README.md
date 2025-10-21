@@ -105,9 +105,7 @@ Click **"Open NIfTI File"** or **"Open DICOM Folder"** to import your medical im
 
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/7394bdc6530d9d705ee93e7f0ee1b7e5331d3209/assets/Overview.png)
 
-<div align="center">
-Loading a DICOM series
-</div> 
+
 
 
 **2) Navigate and Explore**
@@ -119,9 +117,7 @@ Use intuitive controls to explore your data:
 
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/b598a1373063498c485caae627d40ba25aa1c039/assets/Navigation%20tool.gif)
 
-<div align="center">
-Navigating through the volume
-</div> 
+
 
 **3) Adjust Visualization**
 Fine-tune the display for optimal visualization:
@@ -156,9 +152,7 @@ Fine-tune the display for optimal visualization:
 * Overlays appear as red outlines in all views
 
   ![](https://github.com/MhmdSheref/CUFE-MPR/blob/832743130d833ccc8c2c38e6fe9c97585858b586/assets/Segmentaion%20view.png)
-<div align="center">
-Segmentation overlay visualization
-</div> 
+
 
 **5) Use Oblique Slicing**
 **Create custom viewing angles:**
@@ -168,10 +162,7 @@ Segmentation overlay visualization
 * Drag the yellow axis handle to adjust angle
 * Oblique view updates in real-time
 
-<div align="center">
-Show Image
-Interactive oblique plane rotation
-</div> 
+
 
 **6) Crop and Export**
 **Process and export your data:**
@@ -181,10 +172,6 @@ Interactive oblique plane rotation
 * All metadata and modifications are preserved
 
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/b598a1373063498c485caae627d40ba25aa1c039/assets/Crop%20tool.gif)
-<div align="center">
-
-Cropping and exporting processed data
-</div>
 
 ##  Contributors
 
