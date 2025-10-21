@@ -56,24 +56,24 @@ Loading and visualizing medical imaging files
 <table>
 <tr>
 <td align="center" width="33%">
-<img src="https://github.com/MhmdSheref/CUFE-MPR/blob/4ef8df0f612ae9ece7905b5f6cc6fceff00e2f1a/assets/icon1.png" width="60"/><br/>
+<img src="Icons\mouse.png" bgcolor="red" width="60"/><br/>
 <b>Slide/Crosshair Mode</b><br/>
 <sub>Navigate through slices with synchronized crosshairs across all views</sub>
 </td>
 <td align="center" width="33%">
-<img src="path/to/contrast-icon.png" width="60"/><br/>
+<img src="Icons\brightness.png" width="60"/><br/>
 <b>Contrast Mode</b><br/>
 <sub>Adjust window/level settings for optimal visualization</sub>
 </td>
 <td align="center" width="33%">
-<img src="path/to/zoom-icon.png" width="60"/><br/>
+<img src="Icons\loupe.png" width="60"/><br/>
 <b>Zoom/Pan Mode</b><br/>
 <sub>Coordinated zooming and panning across all views</sub>
 </td>
 </tr>
 <tr>
 <td align="center" width="33%">
-<img src="path/to/crop-icon.png" width="60"/><br/>
+<img src="Icons\video.png" width="60"/><br/>
 <b>Crop Mode</b><br/>
 <sub>Slice-based cropping to focus on regions of interest</sub>
 </td>
