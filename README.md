@@ -177,7 +177,7 @@ Fine-tune the display for optimal visualization:
 
 <div align="center">
 
-### 🎓 Team Members
+###  Team Members
 
 <table>
 <tr>
