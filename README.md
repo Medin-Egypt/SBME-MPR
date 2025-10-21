@@ -214,33 +214,27 @@ Cropping and exporting processed data
 <td align="center">
 <a href="https://github.com/MhmdSheref">
 <img src="https://github.com/MhmdSheref.png" width="100px;" alt="MhmdSheref"/><br />
-<sub><b>Abdallah Saeed</b></sub>
-</a><br />
-<a href="https://github.com/MhmdSheref">GitHub</a>
+<sub><b>MhmdSheref</b></sub>
+
 </td>
 
 <td align="center">
 <a href="https://github.com/BasselM0stafa">
 <img src="https://github.com/BasselM0stafa.png" width="100px;" alt="BasselM0stafa"/><br />
 <sub><b>Bassel Mostafa</b></sub>
-</a><br />
-<a href="https://github.com/BasselM0stafa">GitHub</a>
 </td>
 
 <td align="center">
 <a href="https://github.com/MahmoudZah">
 <img src="https://github.com/MahmoudZah.png" width="100px;" alt="MahmoudZah"/><br />
 <sub><b>Mahmoud Zahran</b></sub>
-</a><br />
-<a href="https://github.com/MahmoudZah">GitHub</a>
+
 </td>
 
 <td align="center">
 <a href="https://github.com/rwan01281966344kotb-droid">
 <img src="https://github.com/rwan01281966344kotb-droid.png" width="100px;" alt="rwan01281966344kotb-droid"/><br />
 <sub><b>Rawan Kotb</b></sub>
-</a><br />
-<a href="https://github.com/rwan01281966344kotb-droid">GitHub</a>
 </td>
 </tr>
 </table>
