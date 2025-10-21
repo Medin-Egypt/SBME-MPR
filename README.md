@@ -131,11 +131,11 @@ Fine-tune the display for optimal visualization:
   <table>
     <tr>
       <td align="center">
-        <img src="assets/Contrast tool.gif" width="300"/><br>
+        <img src="assets/Contrast tool.gif" width="400"/><br>
         <b>Contrast Mode</b>
       </td>
       <td align="center">
-        <img src="URL_OF_SECOND_GIF.gif" width="300"/><br>
+        <img src="URL_OF_SECOND_GIF.gif" width="400"/><br>
         <b>Zoom/Pan Mode</b>
       </td>
     </tr>
