@@ -186,7 +186,7 @@ Show Image
 Cropping and exporting processed data
 </div>
 
-## 👥 Contributors
+##  Contributors
 
 <div align="center">
 
@@ -228,4 +228,10 @@ Cropping and exporting processed data
 </tr>
 </table>
 
+                                        
 </div>   
+
+# Supervised By
+
+* **Prof. Tamer Basha**                              
+* **Eng. Alaa Tarek**   
