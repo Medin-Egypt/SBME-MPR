@@ -195,15 +195,15 @@ Cropping and exporting processed data
 <table>
 <tr>
 <td align="center">
-<a href="https://github.com/abdallah-saeed">
-<img src="https://github.com/abdallah-saeed.png" width="100px;" alt="Abdallah Saeed"/><br />
+<a href="https://github.com/MhmdSheref">
+<img src="https://github.com/MhmdSheref.png" width="100px;" alt="MhmdSheref"/><br />
 <sub><b>Abdallah Saeed</b></sub>
 </a><br />
-<a href="https://github.com/abdallah-saeed">GitHub</a>
+<a href="https://github.com/MhmdSheref">GitHub</a>
 </td>
 
 <td align="center">
-<a href="https://github.com/bassel-mostafa">
+<a href="">
 <img src="https://github.com/bassel-mostafa.png" width="100px;" alt="Bassel Mostafa"/><br />
 <sub><b>Bassel Mostafa</b></sub>
 </a><br />
@@ -211,15 +211,15 @@ Cropping and exporting processed data
 </td>
 
 <td align="center">
-<a href="https://github.com/mahmoud-zahran">
-<img src="https://github.com/mahmoud-zahran.png" width="100px;" alt="Mahmoud Zahran"/><br />
+<a href="https://github.com/MahmoudZah">
+<img src="https://github.com/MahmoudZah.png" width="100px;" alt="MahmoudZah"/><br />
 <sub><b>Mahmoud Zahran</b></sub>
 </a><br />
-<a href="https://github.com/mahmoud-zahran">GitHub</a>
+<a href="https://github.com/MahmoudZah">GitHub</a>
 </td>
 
 <td align="center">
-<a href="https://github.com/rawan-kotb">
+<a href="">
 <img src="https://github.com/rawan-kotb.png" width="100px;" alt="Rawan Kotb"/><br />
 <sub><b>Rawan Kotb</b></sub>
 </a><br />
