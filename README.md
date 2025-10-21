@@ -78,18 +78,17 @@ This tool is designed for **medical professionals, researchers, and students** w
 
 </div>
 
+* **Advanced Features**
 
-  * **Advanced Features**
-
-- **Segmentation Overlay**: Load multiple segmentation files with edge detection and red outline visualization
+**Segmentation Overlay**: Load multiple segmentation files with edge detection and red outline visualization
   
-- **Aspect Ratio Correction**: Automatic voxel spacing-based aspect ratio correction for accurate anatomical representation
+ **Aspect Ratio Correction**: Automatic voxel spacing-based aspect ratio correction for accurate anatomical representation
  
-- **AI Orientation Detection**: TensorFlow-based model for automatic anatomical orientation classification
+ **AI Orientation Detection**: TensorFlow-based model for automatic anatomical orientation classification
   
-- **Coordinated Zoom**: Uniform scaling across all views maintaining spatial relationships
+ **Coordinated Zoom**: Uniform scaling across all views maintaining spatial relationships
   
-- **Custom Title Bar**: Modern, frameless window design with drag, minimize, maximize, and restore functionality     
+ **Custom Title Bar**: Modern, frameless window design with drag, minimize, maximize, and restore functionality     
 
 # Requirements
 ```
