@@ -186,15 +186,46 @@ Show Image
 Cropping and exporting processed data
 </div>
 
+## 👥 Contributors
 
-## Contributors
+<div align="center">
 
-**Team Members**
-  * **Mohamed Sherif** 
-  * **Bassel Mostafa**
-  * **Mahmoud Zahran** 
-  * **Rawan Kotb** 
+### 🎓 Team Members
 
- **Supervised By**     
-         * **Prof. Tamer Basha**     
-         * **Eng. Alaa Tarek**     
+<table>
+<tr>
+<td align="center">
+<a href="https://github.com/abdallah-saeed">
+<img src="https://github.com/abdallah-saeed.png" width="100px;" alt="Abdallah Saeed"/><br />
+<sub><b>Abdallah Saeed</b></sub>
+</a><br />
+<a href="https://github.com/abdallah-saeed">GitHub</a>
+</td>
+
+<td align="center">
+<a href="https://github.com/bassel-mostafa">
+<img src="https://github.com/bassel-mostafa.png" width="100px;" alt="Bassel Mostafa"/><br />
+<sub><b>Bassel Mostafa</b></sub>
+</a><br />
+<a href="https://github.com/bassel-mostafa">GitHub</a>
+</td>
+
+<td align="center">
+<a href="https://github.com/mahmoud-zahran">
+<img src="https://github.com/mahmoud-zahran.png" width="100px;" alt="Mahmoud Zahran"/><br />
+<sub><b>Mahmoud Zahran</b></sub>
+</a><br />
+<a href="https://github.com/mahmoud-zahran">GitHub</a>
+</td>
+
+<td align="center">
+<a href="https://github.com/rawan-kotb">
+<img src="https://github.com/rawan-kotb.png" width="100px;" alt="Rawan Kotb"/><br />
+<sub><b>Rawan Kotb</b></sub>
+</a><br />
+<a href="https://github.com/rawan-kotb">GitHub</a>
+</td>
+</tr>
+</table>
+
+</div>   
