@@ -204,7 +204,7 @@ Fine-tune the display for optimal visualization:
 <td align="center">
 <a href="https://github.com/rwan01281966344kotb-droid">
 <img src="https://github.com/rwan01281966344kotb-droid.png" width="100px;" alt="rwan01281966344kotb-droid"/><br />
-<sub><b>Rawan Kotb</b></sub>
+<sub><b>rwan01281966344kotb-droid</b></sub>
 </td>
 </tr>
 </table>
