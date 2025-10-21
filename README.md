@@ -135,7 +135,7 @@ Fine-tune the display for optimal visualization:
         <b>Contrast Mode</b>
       </td>
       <td align="center">
-        <img src="URL_OF_SECOND_GIF.gif" width="400"/><br>
+        <img src="assets/gif converted/Zoom tool.gif" width="400"/><br>
         <b>Zoom/Pan Mode</b>
       </td>
     </tr>
