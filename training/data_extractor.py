@@ -115,10 +115,8 @@ def save_slices(nifti_path, output_dir='nifti_slices'):
 
 # Example usage
 if __name__ == "__main__":
-    # Replace with your NIfTI file path
     nifti_file = r"F:\CUFE-MPR\CT_Set\s0029\ct.nii.gz"
 
-    # Optional: specify custom output directory
     output_directory = "nifti_slices4"
 
     save_slices(nifti_file, output_directory)

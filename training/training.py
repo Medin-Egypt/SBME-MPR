@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras import layers, models
-import os
 
 # Configuration
 IMG_SIZE = 224
@@ -10,7 +9,6 @@ LEARNING_RATE = 0.001
 
 # Set paths - adjust these to your actual paths
 TRAIN_DIR = 'nifti_slices'  # Should contain 3 subdirectories (one per class)
-# VAL_DIR = 'val'  # Optional validation set
 MODEL_SAVE_PATH = 'model.keras'
 
 # Data augmentation for training

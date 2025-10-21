@@ -13,11 +13,7 @@ MODEL_PATH = 'model/model_final.keras'
 if __name__ == '__main__':
     MODEL_PATH = '../model/model_final.keras'
 
-# Define the class labels in the same order as your training data
-# Update these labels based on your training script's 'Class mapping' output.
 CLASS_LABELS = ['Axial', 'Coronal', 'Sagittal']
-
-# Removed: OUTPUT_IMAGE_PATH = 'extracted_dicom_slice.png'
 
 # Global variable for the loaded model
 _model = None
@@ -96,23 +92,18 @@ def preprocess_array(pixel_array_8bit):
     """
     img_array = pixel_array_8bit.astype(np.float32)
 
-    # Convert grayscale (H, W) or (H, W, 1) to RGB (H, W, 3)
     if img_array.ndim == 2:
         img_array = np.stack([img_array] * 3, axis=-1)
     elif img_array.shape[-1] == 1:
         img_array = np.stack([img_array[:, :, 0]] * 3, axis=-1)
 
-    # Use TensorFlow to resize the image
     img_tensor = tf.convert_to_tensor(img_array)
     resized_tensor = tf.image.resize(img_tensor, [IMG_SIZE, IMG_SIZE])
 
-    # Convert to 8-bit integer for consistent data type before normalization
     image_for_model = tf.cast(resized_tensor, tf.uint8).numpy()
 
-    # Add batch dimension and rescale (must match training 1./255) for model input
     processed_array_model_input = np.expand_dims(image_for_model.astype(np.float32), axis=0) / 255.0
 
-    # Simplified return
     return processed_array_model_input
 
 
@@ -129,11 +120,6 @@ def run_prediction_on_preprocessed_array(input_array):
     all_probs = {label: prob for label, prob in zip(CLASS_LABELS, probabilities)}
 
     return predicted_label, float(confidence), all_probs
-
-
-# ----------------------------------------------------------------------
-# Updated DICOM Folder Function
-# ----------------------------------------------------------------------
 
 def predict_middle_dicom_from_folder(dicom_folder_path):
     """
@@ -178,14 +164,7 @@ def predict_middle_dicom_from_folder(dicom_folder_path):
     # 6. Predict
     return run_prediction_on_preprocessed_array(input_image)
 
-
-# ----------------------------------------------------------------------
-# Example Usage (Main block)
-# ----------------------------------------------------------------------
-
 if __name__ == "__main__":
-    # NOTE: You MUST replace this path with the path to a folder
-    # containing multiple DICOM files that form a series.
     TEST_DICOM_FOLDER = r"F:\CUFE-MPR\full"
 
     print("\n--- Testing predict_middle_dicom_from_folder ---")

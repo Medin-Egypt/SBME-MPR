@@ -1,5 +1,4 @@
 import os
-import datetime
 import json
 import numpy as np
 import pydicom
@@ -66,7 +65,6 @@ def load_dicom_data(folder_path):
         rescale_intercept = float(metadata.get('RescaleIntercept', 0))
         image_stack = np.stack([s.pixel_array * rescale_slope + rescale_intercept for s in slices])
 
-        # Transpose and flip for consistent orientation
         image_stack = image_stack.transpose((2, 1, 0))
         image_stack = image_stack[:, ::-1, :]
 
@@ -122,7 +120,7 @@ def load_nifti_data(file_path):
         data = nifti_file.get_fdata()
         affine = nifti_file.affine
 
-        data = data[::-1, :, :]  # Corrects left-right mirroring
+        data = data[::-1, :, :]
 
         if data.ndim < 3:
             raise ValueError(f"Data has fewer than 3 dimensions ({data.ndim}).")
@@ -202,7 +200,7 @@ def project_point_to_oblique_plane(norm_coords, data_shape, rot_x_deg, rot_y_deg
     # Get plane basis vectors
     u_vec = transform_mat @ np.array([1, 0, 0])
     v_vec = transform_mat @ np.array([0, 1, 0])
-    w_vec = transform_mat @ np.array([0, 0, 1])  # Normal to the plane
+    w_vec = transform_mat @ np.array([0, 0, 1])
 
     # Vector from plane center to the point
     point_rel = point_voxel - center_voxel
@@ -243,8 +241,6 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
         slice_data = np.rot90(data[slices['sagittal'], :, :])
         x_spacing, y_spacing = affine[1, 1], affine[2, 2]
     elif view_type == 'oblique':
-        # Oblique slice: field of view stays fixed, but slice depth changes with crosshair
-        # Calculate the perpendicular distance from volume center to use as slice offset
         slice_offset = 0
         if norm_coords is not None:
             _, _, depth_offset = project_point_to_oblique_plane(norm_coords, dims, rot_x_deg, rot_y_deg)
@@ -255,18 +251,16 @@ def get_slice_data(data, dims, slices, affine, intensity_min=0, intensity_max=10
             slice_dim = int(np.linalg.norm(dims))
             slice_offset = slice_dim // 2
 
-        # Keep the oblique plane centered on volume center
         slice_data = _get_oblique_slice(data, rot_x_deg, rot_y_deg, slice_offset, center_position=None)
 
-        # Calculate real-world spacing for aspect ratio correction
         theta_x = np.deg2rad(-rot_x_deg)
         theta_y = np.deg2rad(-rot_y_deg)
         rot_x_mat = np.array([[1, 0, 0], [0, np.cos(theta_x), -np.sin(theta_x)], [0, np.sin(theta_x), np.cos(theta_x)]])
         rot_y_mat = np.array([[np.cos(theta_y), 0, np.sin(theta_y)], [0, 1, 0], [-np.sin(theta_y), 0, np.cos(theta_y)]])
         transform_mat = rot_y_mat @ rot_x_mat
 
-        u_vec_voxel = transform_mat @ np.array([1, 0, 0])  # Voxel-space vector for slice's x-axis
-        v_vec_voxel = transform_mat @ np.array([0, 1, 0])  # Voxel-space vector for slice's y-axis
+        u_vec_voxel = transform_mat @ np.array([1, 0, 0])
+        v_vec_voxel = transform_mat @ np.array([0, 1, 0])
 
         # Get the 3x3 rotation/scaling part of the affine
         affine_3x3 = affine[:3, :3]

@@ -7,114 +7,15 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QFrame, QGroupBox, QSizePolicy, QButtonGroup, QFileDialog, QMessageBox,
-    QDialog, QFormLayout, QSpinBox, QDialogButtonBox
+    QDialog
 )
 from PyQt5.QtWidgets import QComboBox
 from PyQt5.QtCore import Qt, QSize, QEvent, QTimer, QPoint
 from PyQt5.QtGui import QPixmap, QIcon, QImage, QColor
-from h5py._hl import dims
-
 import utils.loader as loader
 import utils.detect_orientation as od
-from utils.SliceViewLabel import  SliceViewLabel
+from utils.ui_classes import SliceViewLabel, SliceCropDialog
 
-class SliceCropDialog(QDialog):
-    """A dialog to get a range of slices from the user."""
-    def __init__(self, max_slice_count, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Crop Slices")
-        
-        # Remove default title bar
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
-        
-        # Main container
-        main_container = QWidget()
-        main_layout = QVBoxLayout(main_container)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        # Custom title bar
-        title_bar = QWidget()
-        title_bar.setObjectName("dialog_title_bar")
-        title_bar.setFixedHeight(35)
-        title_bar_layout = QHBoxLayout(title_bar)
-        title_bar_layout.setContentsMargins(0, 0, 0, 0)
-        title_bar_layout.setSpacing(0)
-        
-        # Title label
-        title_label = QLabel("Crop Slices")
-        title_label.setObjectName("dialog_title_label")
-        title_bar_layout.addWidget(title_label)
-        title_bar_layout.addStretch()
-        
-        # Close button
-        close_btn = QPushButton()
-        close_btn.setObjectName("dialog_close_btn")
-        close_btn.setIcon(QIcon("Icons/cross.png"))
-        close_btn.setIconSize(QSize(16, 16))
-        close_btn.setFixedSize(40, 35)
-        close_btn.clicked.connect(self.reject)
-        title_bar_layout.addWidget(close_btn)
-        
-        # Enable dragging
-        self.drag_position = None
-        title_bar.mousePressEvent = self.title_bar_mouse_press
-        title_bar.mouseMoveEvent = self.title_bar_mouse_move
-        
-        main_layout.addWidget(title_bar)
-        
-        # Content area
-        content_widget = QWidget()
-        content_widget.setObjectName("dialog_content")
-        layout = QVBoxLayout(content_widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        form_layout = QFormLayout()
-
-        # Information label
-        info_label = QLabel(f"This file has {max_slice_count} slices.")
-        info_label.setObjectName("dialog_info_label")
-        layout.addWidget(info_label)
-
-        # Spinboxes for start and end slices
-        self.start_slice = QSpinBox()
-        self.start_slice.setRange(1, max_slice_count)
-        self.start_slice.setValue(1)
-
-        self.end_slice = QSpinBox()
-        self.end_slice.setRange(1, max_slice_count)
-        self.end_slice.setValue(max_slice_count)
-
-        form_layout.addRow("Show slices from:", self.start_slice)
-        form_layout.addRow("to:", self.end_slice)
-
-        layout.addLayout(form_layout)
-
-        # OK and Cancel buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-
-        layout.addWidget(button_box)
-        main_layout.addWidget(content_widget)
-        
-        self.setLayout(main_layout)
-        self.setMinimumWidth(400)
-
-    def title_bar_mouse_press(self, event):
-        """Handle mouse press on title bar for dragging"""
-        if event.button() == Qt.LeftButton:
-            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
-            event.accept()
-
-    def title_bar_mouse_move(self, event):
-        """Handle mouse move on title bar for dragging"""
-        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
-            self.move(event.globalPos() - self.drag_position)
-            event.accept()
-
-    def get_values(self):
-        """Returns the selected start and end slices."""
-        return self.start_slice.value(), self.end_slice.value()
 
 class MPRViewer(QMainWindow):
     def __init__(self, file_path=None):
@@ -395,7 +296,6 @@ class MPRViewer(QMainWindow):
         self.data = self.original_data[:, :, start_idx : end_idx + 1].copy()
         self.dims = self.data.shape
 
-        # ADD THIS: Crop all segmentation data as well
         if self.segmentation_data_list:
             for i in range(len(self.segmentation_data_list)):
                 self.segmentation_data_list[i] = self.segmentation_data_list[i][:, :, start_idx : end_idx + 1].copy()
@@ -424,7 +324,6 @@ class MPRViewer(QMainWindow):
             new_zoom = self.global_zoom_factor / zoom_step
             self.global_zoom_factor = max(new_zoom, 1.0)
 
-        # Apply the new zoom to all views
         for label in self.view_labels.values():
             if isinstance(label, SliceViewLabel):
                 label.zoom_factor = self.global_zoom_factor
@@ -467,7 +366,7 @@ class MPRViewer(QMainWindow):
                 label.zoom_factor = 1.0
                 label.pan_offset_x = 0
                 label.pan_offset_y = 0
-        self.update_all_views()  # Trigger full update to reapply correct base scale
+        self.update_all_views()
 
     def reset_contrast(self):
         """Resets the window/level to the initial values from file load."""
@@ -478,7 +377,7 @@ class MPRViewer(QMainWindow):
         """Resets the oblique rotation angles to default."""
         self.rot_x_deg = 0
         self.rot_y_deg = 0
-        self.oblique_axis_angle = 0  # Reset to default angle
+        self.oblique_axis_angle = 0
 
     def reset_crosshair_and_slices(self):
         """Resets crosshairs to the center and slices to the middle."""
@@ -496,7 +395,6 @@ class MPRViewer(QMainWindow):
             self.dims = self.data.shape
             self.crop_bounds = None
             
-            # ADD THIS: Reset segmentation data to original as well
             if hasattr(self, 'original_segmentation_data_list') and self.original_segmentation_data_list:
                 self.segmentation_data_list = [seg.copy() for seg in self.original_segmentation_data_list]
             
@@ -518,34 +416,17 @@ class MPRViewer(QMainWindow):
         elif source_view == 'coronal':
             self.norm_coords['S'] = norm_x
             self.norm_coords['A'] = norm_y
-            # Note: Axial dimension is typically inverted in normalized space
             self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
             self.slices['sagittal'] = int(norm_x * (self.dims[0] - 1))
         elif source_view == 'sagittal':
             self.norm_coords['C'] = norm_x
             self.norm_coords['A'] = norm_y
-            # Note: Axial dimension is typically inverted in normalized space
             self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
             self.slices['coronal'] = int(norm_x * (self.dims[1] - 1))
 
 
         self.update_all_views()
 
-
-    def update_oblique_from_crosshair(self):
-        """
-        DEPRECATED: The oblique view behavior has changed.
-        
-        New behavior:
-        - The oblique view's field of view stays fixed (centered on volume center)
-        - The slice depth changes based on perpendicular distance of crosshair from the plane
-        - No crosshair or origin marker is shown in the oblique view
-        """
-        # This method is no longer needed - oblique updates happen in update_all_views
-        pass
-
-    
-    # --- NEW METHOD ---
     def set_slice_from_scroll(self, view_type, new_slice_index):
         """
         Updates a slice index from scrolling or cine mode, recalculates the
@@ -561,26 +442,20 @@ class MPRViewer(QMainWindow):
             self.update_view('oblique', 'oblique')
             return
 
-        # Update the corresponding normalized coordinate based on which view was scrolled
         if view_type == 'axial':
-            # Scrolling through axial slices changes the Axial ('A') coordinate.
             if self.dims[2] > 1:
-                # Based on `set_slice_from_crosshair`, the axial dimension is inverted.
                 self.norm_coords['A'] = 1.0 - (new_slice_index / (self.dims[2] - 1))
         elif view_type == 'coronal':
-            # Scrolling through coronal slices changes the Coronal ('C') coordinate.
             if self.dims[1] > 1:
                 self.norm_coords['C'] = new_slice_index / (self.dims[1] - 1)
         elif view_type == 'sagittal':
-            # Scrolling through sagittal slices changes the Sagittal ('S') coordinate.
             if self.dims[0] > 1:
                 self.norm_coords['S'] = new_slice_index / (self.dims[0] - 1)
 
-        # Update all views to reflect the new slice and the new crosshair positions
         self.update_all_views()
 
     def calculate_and_set_uniform_default_scale(self):
-        """CHANGE 1: Calculates the minimum non-distorting scale factor across all visible views."""
+        """Calculates the minimum non-distorting scale factor across all visible views."""
         if not self.file_loaded or not self.dims:
             self.default_scale_factor = 1.0
             return
@@ -599,14 +474,11 @@ class MPRViewer(QMainWindow):
             if not label or not label.isVisible() or label.width() < 10 or label.height() < 10:
                 continue
 
-            # --- SIMPLIFIED LOGIC ---
-            # Get pre-calculated, aspect-ratio-corrected dimensions
             if view_name in self.pixel_dims:
                 img_w, img_h = self.pixel_dims[view_name]
-            else:  # Fallback for oblique or other views
+            else:
                 img_w, img_h = self.pixel_dims['axial']
 
-                # Calculate the scaling factor needed for this view
             if img_w > 0 and img_h > 0:
                 scale_w = label.width() / img_w
                 scale_h = label.height() / img_h
@@ -652,11 +524,11 @@ class MPRViewer(QMainWindow):
                 self.crop_bounds = None
 
                 self.reset_crosshair_and_slices()
-                self.reset_all_zooms()  # Resets global zoom factor
+                self.reset_all_zooms()
                 self.reset_rotation()
 
                 self.show_main_views_initially()
-                self.update_all_views()  # Triggers uniform default scale calculation
+                self.update_all_views()
                 QMessageBox.information(self, "Success", f"NIfTI file loaded successfully!\nDimensions: {self.dims}")
             except Exception as e:
 
@@ -797,7 +669,6 @@ class MPRViewer(QMainWindow):
     def handle_rotate_mode_toggle(self, checked):
         """Show/hide oblique axis based on rotate mode and current view"""
         if self.oblique_view_enabled:
-            # Just update the view to show/hide the axis based on rotate mode
             self.update_view('coronal', 'coronal', sync_crosshair=True)
 
     def eventFilter(self, obj, event):
@@ -836,7 +707,6 @@ class MPRViewer(QMainWindow):
         elif view_type == 'sagittal':
             slice_idx = self.slices['sagittal']
         elif view_type == 'oblique':
-            # For oblique, we'll skip segmentation overlay for now
             painter.end()
             return QPixmap.fromImage(image)
         else:
@@ -905,9 +775,6 @@ class MPRViewer(QMainWindow):
             norm_coords=self.norm_coords  # Pass normalized coordinates
         )
 
-        # Scale the numpy data to the target size before converting to QPixmap
-        # This is a simplification. A proper MPR would handle image size based on voxel size.
-        # For now, we will create the pixmap from the raw slice and let SliceViewLabel handle scaling.
         pixmap = self.numpy_to_qpixmap(slice_data)
 
         if self.segmentation_visible and self.segmentation_data_list and view_type != 'segmentation':
@@ -1009,7 +876,6 @@ class MPRViewer(QMainWindow):
 
         # Process each loaded segmentation
         for seg_data in self.segmentation_data_list:
-            # Extract the slice from segmentation data
             if view_type == 'axial':
                 seg_slice = seg_data[:, :, slice_idx]
                 seg_slice = np.flipud(np.rot90(seg_slice))
@@ -1029,7 +895,6 @@ class MPRViewer(QMainWindow):
             if not mask.any():
                 continue
 
-            # Find edges using morphological operations
             eroded = ndimage.binary_erosion(mask)
             edges = mask & ~eroded
 
@@ -1049,10 +914,8 @@ class MPRViewer(QMainWindow):
 
         painter.end()
 
-        # Convert QImage to QPixmap
         pixmap = QPixmap.fromImage(seg_image)
 
-        # Scale to fit the label while maintaining aspect ratio
         scaled_pixmap = pixmap.scaled(
             label.size(),
             Qt.KeepAspectRatio,
@@ -1184,7 +1047,6 @@ class MPRViewer(QMainWindow):
             if view_name in ['coronal', 'sagittal', 'axial', 'oblique']:
                 panel.show()
                 if view_name == 'oblique':
-                    # Ensure oblique is placed in 1,1
                     self.viewing_grid.removeWidget(panel)
                     self.viewing_grid.addWidget(panel, 1, 1)
             else:
@@ -1224,7 +1086,7 @@ class MPRViewer(QMainWindow):
         sidebar.setFrameStyle(QFrame.Box)
         sidebar.setFixedWidth(200)
 
-        layout = QVBoxLayout(sidebar)  # This line MUST be here at the beginning
+        layout = QVBoxLayout(sidebar)
         layout.setSpacing(20)
         layout.setContentsMargins(10, 10, 10, 10)
 
@@ -1304,12 +1166,10 @@ class MPRViewer(QMainWindow):
                 btn.setObjectName(object_name)
                 tools_layout.addWidget(btn, r, c)
 
-                # If it's the crop button, connect its new function
                 if object_name == "tool_btn_1_0":
-                    btn.setCheckable(False)  # Make it a normal button, not a mode
+                    btn.setCheckable(False)
                     btn.clicked.connect(self.show_slice_crop_dialog)
                 else:
-                    # Other buttons remain checkable modes
                     btn.setCheckable(True)
                     self.tools_group_buttons.addButton(btn, r * 3 + c)
 

@@ -1,9 +1,111 @@
 from PyQt5.QtWidgets import (
-    QPushButton, QLabel, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QDialog, QFormLayout,
+    QSpinBox, QDialogButtonBox, QPushButton, QLabel, QSizePolicy
 )
+from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt, QSize, QTimer
 from PyQt5.QtGui import QPainter, QPen, QColor
 import time
+
+
+class SliceCropDialog(QDialog):
+    """A dialog to get a range of slices from the user."""
+
+    def __init__(self, max_slice_count, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Crop Slices")
+
+        # Remove default title bar
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+
+        # Main container
+        main_container = QWidget()
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Custom title bar
+        title_bar = QWidget()
+        title_bar.setObjectName("dialog_title_bar")
+        title_bar.setFixedHeight(35)
+        title_bar_layout = QHBoxLayout(title_bar)
+        title_bar_layout.setContentsMargins(0, 0, 0, 0)
+        title_bar_layout.setSpacing(0)
+
+        # Title label
+        title_label = QLabel("Crop Slices")
+        title_label.setObjectName("dialog_title_label")
+        title_bar_layout.addWidget(title_label)
+        title_bar_layout.addStretch()
+
+        # Close button
+        close_btn = QPushButton()
+        close_btn.setObjectName("dialog_close_btn")
+        close_btn.setIcon(QIcon("Icons/cross.png"))
+        close_btn.setIconSize(QSize(16, 16))
+        close_btn.setFixedSize(40, 35)
+        close_btn.clicked.connect(self.reject)
+        title_bar_layout.addWidget(close_btn)
+
+        # Enable dragging
+        self.drag_position = None
+        title_bar.mousePressEvent = self.title_bar_mouse_press
+        title_bar.mouseMoveEvent = self.title_bar_mouse_move
+
+        main_layout.addWidget(title_bar)
+
+        # Content area
+        content_widget = QWidget()
+        content_widget.setObjectName("dialog_content")
+        layout = QVBoxLayout(content_widget)
+        layout.setContentsMargins(20, 20, 20, 20)
+        form_layout = QFormLayout()
+
+        # Information label
+        info_label = QLabel(f"This file has {max_slice_count} slices.")
+        info_label.setObjectName("dialog_info_label")
+        layout.addWidget(info_label)
+
+        # Spinboxes for start and end slices
+        self.start_slice = QSpinBox()
+        self.start_slice.setRange(1, max_slice_count)
+        self.start_slice.setValue(1)
+
+        self.end_slice = QSpinBox()
+        self.end_slice.setRange(1, max_slice_count)
+        self.end_slice.setValue(max_slice_count)
+
+        form_layout.addRow("Show slices from:", self.start_slice)
+        form_layout.addRow("to:", self.end_slice)
+
+        layout.addLayout(form_layout)
+
+        # OK and Cancel buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+
+        layout.addWidget(button_box)
+        main_layout.addWidget(content_widget)
+
+        self.setLayout(main_layout)
+        self.setMinimumWidth(400)
+
+    def title_bar_mouse_press(self, event):
+        """Handle mouse press on title bar for dragging"""
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def title_bar_mouse_move(self, event):
+        """Handle mouse move on title bar for dragging"""
+        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+
+    def get_values(self):
+        """Returns the selected start and end slices."""
+        return self.start_slice.value(), self.end_slice.value()
 
 # --- Custom QLabel for Mouse Wheel Interaction and Crosshairs ---
 class SliceViewLabel(QLabel):
@@ -63,7 +165,6 @@ class SliceViewLabel(QLabel):
         self.show_only_center_point = False
         self.hide_crosshair_completely = False  # Hide all crosshair elements
 
-    # --- MODIFIED METHOD ---
     def _cine_next_slice(self):
         """Advance to the previous slice in cine mode."""
         if not self.cine_active or not self.parent_viewer.file_loaded:
@@ -86,8 +187,6 @@ class SliceViewLabel(QLabel):
         # Call the new central method to update slice, crosshairs, and all views
         self.parent_viewer.set_slice_from_scroll(self.view_type, new_slice)
 
-    # --- END MODIFIED METHOD ---
-
     def start_cine(self):
         """Start cine mode playback."""
         if not self.cine_active:
@@ -100,7 +199,6 @@ class SliceViewLabel(QLabel):
             self.cine_active = False
             self.cine_timer.stop()
 
-    # --- MODIFIED METHOD ---
     def wheelEvent(self, event):
         """Handle mouse wheel events for scrolling through slices or zooming."""
         slide_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_0")
@@ -151,8 +249,6 @@ class SliceViewLabel(QLabel):
             event.accept()
         else:
             super().wheelEvent(event)
-
-    # --- END MODIFIED METHOD ---
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -506,7 +602,6 @@ class SliceViewLabel(QLabel):
         default_scale = self.parent_viewer.default_scale_factor if hasattr(self.parent_viewer,
                                                                            'default_scale_factor') else 1.0
 
-        # --- New Core Scaling Logic ---
         # The image size (base scaled by default_scale) is multiplied by the user's zoom.
         original_img_w = self._original_pixmap.width()
         original_img_h = self._original_pixmap.height()
@@ -518,7 +613,6 @@ class SliceViewLabel(QLabel):
         # 2. Apply the user zoom (self.zoom_factor) to the BASE size
         zoomed_width = int(base_w * self.zoom_factor)
         zoomed_height = int(base_h * self.zoom_factor)
-        # -----------------------------
 
         zoomed_width = max(10, min(zoomed_width, 50000))
         zoomed_height = max(10, min(zoomed_height, 50000))
@@ -562,7 +656,6 @@ class SliceViewLabel(QLabel):
             self.setPixmap(cropped)
         else:
             # If the zoomed image is smaller than the label, we just center it.
-            # The key change: We use zoomed_pixmap (already correctly scaled) directly.
             self.pan_offset_x = 0
             self.pan_offset_y = 0
             self.setPixmap(zoomed_pixmap)  # <-- Use the centrally scaled image
@@ -570,14 +663,11 @@ class SliceViewLabel(QLabel):
         self.update()
 
     def set_image_pixmap(self, pixmap):
-        # We need the original, unscaled pixmap size to determine the correct scaling
         self._original_pixmap = pixmap
-        # Apply zoom and pan, which now uses the uniform default scale
         self._apply_zoom_and_pan()
 
     def reset_zoom(self):
-        # Note: self.zoom_factor is controlled globally by MPRViewer.reset_all_zooms
-        self.zoom_factor = 1.0  # Set local factor to 1.0
+        self.zoom_factor = 1.0
         self.pan_offset_x = 0
         self.pan_offset_y = 0
         if self._original_pixmap:
