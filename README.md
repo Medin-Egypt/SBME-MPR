@@ -17,38 +17,25 @@ The application supports both **NIfTI** and **DICOM** file formats, offering adv
 
 This tool is designed for **medical professionals, researchers, and students** working with volumetric medical imaging data, providing intuitive controls and powerful visualization features for comprehensive data analysis.
 #  Features
-**File Support**  
+* **File Support**  
 
 **NIfTI Format:** Load and visualize `.nii` and`.nii.gz` files 
 
 **DICOM Format:** Import entire `.DICOM` series from folders  
 
 **Export Capabilities:** Export processed volumes to both **NIfTI** and **DICOM** formats with full metadata preservation         
-<div align="center">
-Show Image 
-  </div>
-<div align="center">                                  
-Loading and visualizing medical imaging files                             
-</div>
 
-**Viewing Modes**
 
-**3 Main Views:** Simultaneous axial, coronal, and sagittal plane visualization
-**Oblique View:** Custom oblique plane slicing with interactive rotation controls
-**Segmentation View:** Overlay and visualize segmentation masks with edge detection
+* **Viewing Modes**
 
-<div align="center">
+**3 Main Views:** Simultaneous axial, coronal, and sagittal plane visualization                
 
-# Viewing Modes
+**Oblique View:** Custom oblique plane slicing with interactive rotation controls                
 
-| Main Views | Oblique View | Segmentation View |
-|:----------:|:------------:|:-----------------:|
-| ![Main Views](path/to/main-views.png) | ![Oblique View](path/to/oblique-view.png) | ![Segmentation](https://github.com/MhmdSheref/CUFE-MPR/blob/3d7abc5bebfb35b35b1d961f105538fb948591db/assets/Segmentaion%20view.png) |
-| Simultaneous axial, coronal, and sagittal visualization | Custom oblique plane with rotation | Overlay segmentation masks with edge detection |
+**Segmentation View:** Overlay and visualize segmentation masks with edge detection                    
 
-</div> 
 
-###  Interactive Tools
+ * **Interactive Tools**
 
 <div align="center">
 
@@ -91,21 +78,18 @@ Loading and visualizing medical imaging files
 
 </div>
 
-###  Advanced Features
+
+  * **Advanced Features**
 
 - **Segmentation Overlay**: Load multiple segmentation files with edge detection and red outline visualization
+  
 - **Aspect Ratio Correction**: Automatic voxel spacing-based aspect ratio correction for accurate anatomical representation
+ 
 - **AI Orientation Detection**: TensorFlow-based model for automatic anatomical orientation classification
+  
 - **Coordinated Zoom**: Uniform scaling across all views maintaining spatial relationships
-- **Custom Title Bar**: Modern, frameless window design with drag, minimize, maximize, and restore functionality
-
-<div align="center">
-
-![Advanced Features Demo](path/to/advanced-features-demo.gif)
-
-*Demonstration of segmentation overlay and oblique slicing*
-
-</div>
+  
+- **Custom Title Bar**: Modern, frameless window design with drag, minimize, maximize, and restore functionality     
 
 # Requirements
 ```
