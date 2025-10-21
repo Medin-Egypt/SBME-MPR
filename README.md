@@ -109,12 +109,7 @@ Loading and visualizing medical imaging files
 
 # Requirements
 ```
-tensorflow>=2.8.0
-numpy>=1.21.0
-nibabel>=3.2.0
-pydicom>=2.3.0
-PyQt5>=5.15.0
-scipy>=1.7.0
+pip install -r requirements.txt
 ```
 # Example Workflow
 **1) Load Medical Data**        
