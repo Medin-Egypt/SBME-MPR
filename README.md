@@ -162,7 +162,7 @@ Fine-tune the display for optimal visualization:
 * Drag the yellow axis handle to adjust angle
 * Oblique view updates in real-time
 
-
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/b0622ede04e272644e075070303e5f96be9579c9/assets/gif%20converted/Rotate%20tool.gif)
 
 **6) Crop and Export**
 **Process and export your data:**
