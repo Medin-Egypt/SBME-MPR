@@ -1,120 +1,205 @@
-# 🩻 MPR Viewer
+# MPR Viewer
 **Multi-Planar Reconstruction Viewer for Medical Imaging**
-# 🧠 Overview
-**MPR Viewer** (Multi-Planar Reconstruction Viewer) is a powerful desktop application built with **Python** and **PyQt5** that allows users to **view , analyze ,and interact** with medical imaging data such as **DICOM** and **NIfTI** scans.
-It reconstructs 3D medical images and displays them in multiple planes **— Axial, Coronal, Sagittal, and Oblique —** providing doctors, students, and researchers with a precise way to explore medical data.
-# ⚙️ Features
-• **Data Import**   
-Load **NIfTI (.nii, .nii.gz)** files or **DICOM** folders (multi-slice series)  
+# Overview
 
-• **Multi-Planar Views**       
-View synchronized **Axial, Coronal, Sagittal**, and **Oblique** slices simultaneously. 
+**MPR (Multi-Planar Reconstruction) Viewer** is a comprehensive medical imaging application built with **PyQt5** that enables visualization and manipulation of **3D medical imaging data**.
 
-• **Interactive Tools**         
-Zoom, Pan, Crop, and adjust Contrast dynamically using the mouse.          
+The application supports both **NIfTI** and **DICOM** file formats, offering advanced viewing capabilities including:
 
-• **Cine Mode**          
-Automatically scroll through slices (like a playback animation).      
+* Multi-planar reconstruction (MPR)
+* Segmentation overlay
+* Oblique slicing
+* AI-powered orientation detection
 
-• **Crosshair Synchronization**       
-Crosshair moves in real-time across all viewing planes.        
+ ![](https://github.com/MhmdSheref/CUFE-MPR/blob/10a433384a0e6b7e8cadd6f265bdb146c25e09e1/assets/Overview.png)
+<div align="center">
+</div>
 
-• **Automatic Orientation & Intensity Handling**           
-Uses DICOM **WindowCenter/WindowWidth** and spacing metadata for accurate reconstruction.       
+This tool is designed for **medical professionals, researchers, and students** working with volumetric medical imaging data, providing intuitive controls and powerful visualization features for comprehensive data analysis.
+#  Features
+**File Support**  
 
-• **3D Transformations**        
-Rotation and oblique slicing supported for advanced visualization.       
+**NIfTI Format:** Load and visualize `.nii` and`.nii.gz` files 
 
-• **Image Correction**        
-Automatic left–right flipping and sorting for proper anatomical alignment.       
+**DICOM Format:** Import entire `.DICOM` series from folders  
 
-• **Modern Dark-Mode UI**         
-Custom QSS styling with clean design and smooth contrast.        
+**Export Capabilities:** Export processed volumes to both **NIfTI** and **DICOM** formats with full metadata preservation         
+<div align="center">
+Show Image 
+  </div>
+<div align="center">                                  
+Loading and visualizing medical imaging files                             
+</div>
 
-• **Export**       
-Save processed data back to **DICOM** or **NIfTI** format.        
-## ⚙️ Tech Stack  
+**Viewing Modes**
 
-| Layer | Technology / Library | Purpose |
-|-------|-----------------------|----------|
-| **Language** | Python 3 | Core programming language |
-| **GUI Framework** | PyQt5 | For the main application interface |
-| **Medical Data Handling** | pydicom, nibabel | Load and interpret DICOM & NIfTI data |
-| **Computation** | numpy, scipy | Image array operations and interpolation |
-| **Machine Learning** | TensorFlow | Detect orientation & image metadata |
-| **Styling** | QSS | Custom dark UI theme |
-| **System Tools** | os, sys, time | File I/O and app runtime functions |
-## 💻 Requirements      
-Before running, install all dependencies:     
-```bash
-pip install pyqt5 tensorflow numpy scipy nibabel pydicom
+**3 Main Views:** Simultaneous axial, coronal, and sagittal plane visualization
+**Oblique View:** Custom oblique plane slicing with interactive rotation controls
+**Segmentation View:** Overlay and visualize segmentation masks with edge detection
+
+<div align="center">
+
+# Viewing Modes
+
+| Main Views | Oblique View | Segmentation View |
+|:----------:|:------------:|:-----------------:|
+| ![Main Views](path/to/main-views.png) | ![Oblique View](path/to/oblique-view.png) | ![Segmentation](https://github.com/MhmdSheref/CUFE-MPR/blob/3d7abc5bebfb35b35b1d961f105538fb948591db/assets/Segmentaion%20view.png) |
+| Simultaneous axial, coronal, and sagittal visualization | Custom oblique plane with rotation | Overlay segmentation masks with edge detection |
+
+</div> 
+
+###  Interactive Tools
+
+<div align="center">
+
+<table>
+<tr>
+<td align="center" width="33%">
+<img src="assets/icon1.png" width="60"/><br/>
+<b>Slide/Crosshair Mode</b><br/>
+<sub>Navigate through slices across all views.</sub>
+</td>
+<td align="center" width="33%">
+<img src="assets/icon2.png" width="60"/><br/>
+<b>Contrast Mode</b><br/>
+<sub>Adjust window/level settings for optimal visualization</sub>
+</td>
+<td align="center" width="33%">
+<img src="assets/icon3.png" width="60"/><br/>
+<b>Zoom/Pan Mode</b><br/>
+<sub>Coordinated zooming and panning across all views</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+<img src="assets/icon4.png" width="60"/><br/>
+<b>Crop Mode</b><br/>
+<sub>Slice-based cropping to focus on regions of interest</sub>
+</td>
+<td align="center" width="33%">
+<img src="assets/icon5.png" width="60"/><br/>
+<b>Rotate Mode</b><br/>
+<sub>Interactive oblique plane rotation with visual indicators</sub>
+</td>
+<td align="center" width="33%">
+<img src="assets/icon6.png" width="60"/><br/>
+<b>Cine Mode</b><br/>
+<sub>Automated slice-by-slice playback</sub>
+</td>
+</tr>
+</table>
+
+</div>
+
+###  Advanced Features
+
+- **Segmentation Overlay**: Load multiple segmentation files with edge detection and red outline visualization
+- **Aspect Ratio Correction**: Automatic voxel spacing-based aspect ratio correction for accurate anatomical representation
+- **AI Orientation Detection**: TensorFlow-based model for automatic anatomical orientation classification
+- **Coordinated Zoom**: Uniform scaling across all views maintaining spatial relationships
+- **Custom Title Bar**: Modern, frameless window design with drag, minimize, maximize, and restore functionality
+
+<div align="center">
+
+![Advanced Features Demo](path/to/advanced-features-demo.gif)
+
+*Demonstration of segmentation overlay and oblique slicing*
+
+</div>
+
+# Requirements
 ```
-## 🚀 How It Works        
-1.**Run the application**  
+tensorflow>=2.8.0
+numpy>=1.21.0
+nibabel>=3.2.0
+pydicom>=2.3.0
+PyQt5>=5.15.0
+scipy>=1.7.0
+```
+# Example Workflow
+**1) Load Medical Data**        
+Click **"Open NIfTI File"** or **"Open DICOM Folder"** to import your medical imaging data.
+**The application automatically:**
 
-2.**Load Medical Data**        
-Choose **“Open DICOM Folder”** or **“Open NIfTI File”** from the sidebar.    
-The `loader.py` module:     
-• Reads the DICOM or NIfTI data.    
-• Sorts slices by their spatial position.      
-• Fixes orientation and left–right mirroring issues.    
-• Applies proper intensity windowing for clear contrast.   
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/ce36d382a09da99d1d801f93bf7d0f8cc2a9d1e4/assets/Screenshot%201.png)
+* Detects orientation (for DICOM files)
+* Calculates optimal window/level settings
+* Applies aspect ratio correction
 
-3.**Visualize the Scans**   
-View the 3D dataset in four synchronized panels:     
-**Axial**     
-**Coronal**        
-**Sagittal**       
-**Oblique**              
-Move through slices using your mouse wheel or the cine playback controls.      
+<div align="center">
+Show Image
+Loading a DICOM series
+</div> 
 
-4.**Interact with the Images**       
-Use tools from the sidebar to:       
-🔍 **Zoom / Pan** — explore image details. 
+**2) Navigate and Explore**
+Use intuitive controls to explore your data:
 
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/0ed7c0efd7d05154d8f3640a1c143b9616fc6f04/assets/IMG_0410.gif)   
+* **Mouse wheel:** Scroll through slices
+* **Click and drag:** Move crosshair to specific locations
+* **Double-click:** Maximize any view for detailed inspection
 
-💡 **Contrast** — adjust brightness and contrast levels.
+<div align="center">
+Show Image
+Navigating through the volume
+</div> 
 
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/1b0376c0a818e0f042fa8fcffb17220b39ab76e7/assets/IMG_0407.gif)
+**3) Adjust Visualization**
+Fine-tune the display for optimal visualization:
 
-✂️ **Crop** — focus on a region of interest.    
+* **Contrast Mode:** Drag to adjust window/level
+* **Zoom/Pan Mode:** Wheel to zoom, drag to pan
+* **Reset:** Restore original settings anytime
 
-🎞 **Cine Mode** — play slices automatically like a short animation.
+<div align="center">
+Show Image
+Adjusting contrast and zoom
+</div> 
 
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/09e97cac40f461157c84ce14168445d3a77fd1a1/assets/IMG_0408.gif)
+**4) Work with Segmentations**
+**Load and visualize segmentation masks:**
 
-5.**Switch View Modes**          
-Toggle between:     
-**Main View** — standard three-plane mode.    
-**Oblique View** — diagonal reconstruction.        
-**Segmentation View** — if segmentation data is available.        
+* Click "Load Segmentation" to add masks
+* Switch to "Segmentation View" for dedicated visualization
+* Overlays appear as red outlines in all views
 
-6.**Export Processed Data**      
-Save results in:    
-**NIfTI format (.nii, .nii.gz)**      
-**DICOM series**       
-Export preserves the current orientation and cropping settings.       
-## 🧪 Example Workflow 
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/3b9614a7bb250bf6c3e039d1a2b5cfee9b165e6e/assets/IMG_0409.gif)
+<div align="center">
+Show Image
+Segmentation overlay visualization
+</div> 
+
+**5) Use Oblique Slicing**
+**Create custom viewing angles:**
+
+* Switch to "Oblique View" mode
+* Enable "Rotate Mode"
+* Drag the yellow axis handle to adjust angle
+* Oblique view updates in real-time
+
+<div align="center">
+Show Image
+Interactive oblique plane rotation
+</div> 
+
+**6) Crop and Export**
+**Process and export your data:**
+
+* Click the Crop tool to select slice range
+* Choose export format (NIfTI or DICOM)
+* All metadata and modifications are preserved
+
+<div align="center">
+Show Image
+Cropping and exporting processed data
+</div>
 
 
+## Contributors
 
-## 👩‍💻 Contributors
+**Team Members**
+  * **Mohamed Sherif** 
+  * **Bassel Mostafa**
+  * **Mahmoud Zahran** 
+  * **Rawan Kotb** 
 
-**🧑‍🤝‍🧑 Team Members**
-  - **Mohamed Sherif** 
-  - **Bassel Mostafa**
-  - **Mahmoud Zahran** 
-  - **Rawan Kotb** 
-
- **🧭 Supervised By**     
-         - **Prof. Tamer Basha**     
-         - **Eng. Alaa Tarek**     
-
-
-
-
-   
-
+ **Supervised By**     
+         * **Prof. Tamer Basha**     
+         * **Eng. Alaa Tarek**     
