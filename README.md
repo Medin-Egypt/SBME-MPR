@@ -120,10 +120,12 @@ Click **"Open NIfTI File"** or **"Open DICOM Folder"** to import your medical im
 * Calculates optimal window/level settings
 * Applies aspect ratio correction
 
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/7394bdc6530d9d705ee93e7f0ee1b7e5331d3209/assets/Overview.png)
+
 <div align="center">
-Show Image
 Loading a DICOM series
 </div> 
+
 
 **2) Navigate and Explore**
 Use intuitive controls to explore your data:
