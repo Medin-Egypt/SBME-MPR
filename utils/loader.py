@@ -12,6 +12,7 @@ from scipy.ndimage import map_coordinates
 def load_dicom_data(folder_path):
     """
     Loads a DICOM series, handling orientation, spacing, intensity, and full metadata.
+    Now supports single-slice images (like X-rays) without ImagePositionPatient.
     """
     try:
         if os.path.isdir(folder_path):
@@ -25,20 +26,33 @@ def load_dicom_data(folder_path):
             raise ValueError(f"No DICOM files found in {folder_path}")
 
         slices = []
+        slices_without_position = []
+        
         for f in dicom_files:
             try:
                 ds = dcmread(f, stop_before_pixels=False)
-                if hasattr(ds, 'pixel_array') and hasattr(ds, 'ImagePositionPatient'):
-                    slices.append(ds)
+                if hasattr(ds, 'pixel_array'):
+                    if hasattr(ds, 'ImagePositionPatient'):
+                        slices.append(ds)
+                    else:
+                        # Store slices without position info separately
+                        slices_without_position.append(ds)
             except Exception:
                 continue
 
-        if not slices:
-            raise ValueError("No readable DICOM slices with pixel data and position info found.")
+        # If we have slices with position info, use those (normal multi-slice series)
+        if slices:
+            slices.sort(key=lambda s: float(s.ImagePositionPatient[2]))
+            first_slice = slices[0]
+            has_position_info = True
+        # Otherwise, use slices without position info (single X-ray images)
+        elif slices_without_position:
+            slices = slices_without_position
+            first_slice = slices[0]
+            has_position_info = False
+        else:
+            raise ValueError("No readable DICOM slices with pixel data found.")
 
-        slices.sort(key=lambda s: float(s.ImagePositionPatient[2]))
-
-        first_slice = slices[0]
         metadata = {}
 
         tags_to_extract = [
@@ -65,8 +79,18 @@ def load_dicom_data(folder_path):
         rescale_intercept = float(metadata.get('RescaleIntercept', 0))
         image_stack = np.stack([s.pixel_array * rescale_slope + rescale_intercept for s in slices])
 
-        image_stack = image_stack.transpose((2, 1, 0))
-        image_stack = image_stack[:, ::-1, :]
+        # Handle orientation differently for single-slice vs multi-slice
+        if has_position_info:
+            # Multi-slice volume: apply standard transformations
+            image_stack = image_stack.transpose((2, 1, 0))
+            image_stack = image_stack[:, ::-1, :]
+        else:
+            # Single-slice: add a third dimension to make it (X, Y, 1)
+            if image_stack.ndim == 2:
+                image_stack = image_stack[:, :, np.newaxis]
+            elif image_stack.ndim == 3 and image_stack.shape[0] == 1:
+                # Already has the right shape from stack, just transpose
+                image_stack = image_stack.transpose((2, 1, 0))
 
         # Determine intensity window for display
         if 'WindowCenter' in metadata and 'WindowWidth' in metadata:
@@ -85,23 +109,35 @@ def load_dicom_data(folder_path):
                 intensity_min, intensity_max = image_stack.min(), image_stack.max()
 
         # Build affine matrix
-        pixel_spacing = [float(x) for x in first_slice.PixelSpacing]
-        if len(slices) > 1:
-            pos1 = np.array(slices[0].ImagePositionPatient)
-            pos2 = np.array(slices[1].ImagePositionPatient)
-            slice_spacing = np.linalg.norm(pos2 - pos1)
+        if has_position_info and hasattr(first_slice, 'PixelSpacing'):
+            pixel_spacing = [float(x) for x in first_slice.PixelSpacing]
+            
+            if len(slices) > 1:
+                pos1 = np.array(slices[0].ImagePositionPatient)
+                pos2 = np.array(slices[1].ImagePositionPatient)
+                slice_spacing = np.linalg.norm(pos2 - pos1)
+            else:
+                slice_spacing = float(getattr(first_slice, 'SliceThickness', 1.0))
+
+            orientation = np.array(first_slice.ImageOrientationPatient).reshape(2, 3)
+            row_vec, col_vec = orientation[0], orientation[1]
+            slice_vec = np.cross(row_vec, col_vec)
+
+            affine = np.identity(4)
+            affine[:3, 0] = row_vec * pixel_spacing[0]
+            affine[:3, 1] = col_vec * pixel_spacing[1]
+            affine[:3, 2] = slice_vec * slice_spacing
+            affine[:3, 3] = first_slice.ImagePositionPatient
         else:
+            # Single-slice without position info: create default affine
+            pixel_spacing = [float(x) for x in first_slice.PixelSpacing] if hasattr(first_slice, 'PixelSpacing') else [1.0, 1.0]
             slice_spacing = float(getattr(first_slice, 'SliceThickness', 1.0))
-
-        orientation = np.array(first_slice.ImageOrientationPatient).reshape(2, 3)
-        row_vec, col_vec = orientation[0], orientation[1]
-        slice_vec = np.cross(row_vec, col_vec)
-
-        affine = np.identity(4)
-        affine[:3, 0] = row_vec * pixel_spacing[0]
-        affine[:3, 1] = col_vec * pixel_spacing[1]
-        affine[:3, 2] = slice_vec * slice_spacing
-        affine[:3, 3] = first_slice.ImagePositionPatient
+            
+            # Create identity-based affine with pixel spacing
+            affine = np.identity(4)
+            affine[0, 0] = pixel_spacing[0]
+            affine[1, 1] = pixel_spacing[1]
+            affine[2, 2] = slice_spacing
 
         dims = image_stack.shape
         return image_stack, affine, dims, intensity_min, intensity_max, metadata
@@ -109,7 +145,6 @@ def load_dicom_data(folder_path):
     except Exception as e:
         print(f"Error loading DICOM data: {e}")
         return None, None, None, 0, 1, None
-
 
 def load_nifti_data(file_path):
     """
