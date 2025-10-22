@@ -202,9 +202,9 @@ Fine-tune the display for optimal visualization:
 </td>
 
 <td align="center">
-<a href="https://github.com/rwan01281966344kotb-droid">
-<img src="https://github.com/rwan01281966344kotb-droid.png" width="100px;" alt="rwan01281966344kotb-droid"/><br />
-<sub><b>rwan01281966344kotb-droid</b></sub>
+<a href="https://github.com/RwanOtb">
+<img src="https://github.com/RwanOtb.png" width="100px;" alt="RwanOtb"/><br />
+<sub><b>RwanOtb</b></sub>
 </td>
 </tr>
 </table>
