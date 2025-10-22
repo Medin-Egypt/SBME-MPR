@@ -115,7 +115,7 @@ Use intuitive controls to explore your data:
 * **Click and drag:** Move crosshair to specific locations
 * **Double-click:** Maximize any view for detailed inspection
 
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/b598a1373063498c485caae627d40ba25aa1c039/assets/Navigation%20tool.gif)
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/fd047e37bd47328033e9fe22546262ddac866ee8/assets/gif%20converted/Navigation%20tool.gif)
 
 
 
@@ -131,7 +131,7 @@ Fine-tune the display for optimal visualization:
   <table>
     <tr>
       <td align="center">
-        <img src="assets/Contrast tool.gif" width="420"/><br>
+        <img src="assets/gif converted/Contrast tool.gif" width="420"/><br>
         <b>Contrast Mode</b>
       </td>
       <td align="center">
@@ -171,7 +171,7 @@ Fine-tune the display for optimal visualization:
 * Choose export format (NIfTI or DICOM)
 * All metadata and modifications are preserved
 
-![](https://github.com/MhmdSheref/CUFE-MPR/blob/b598a1373063498c485caae627d40ba25aa1c039/assets/Crop%20tool.gif)
+![](https://github.com/MhmdSheref/CUFE-MPR/blob/fd047e37bd47328033e9fe22546262ddac866ee8/assets/gif%20converted/Crop%20tool.gif)
 
 ##  Contributors
 
