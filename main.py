@@ -181,8 +181,17 @@ class MPRViewer(QMainWindow):
         sag_h = int(ax_vox * (z_spacing / y_spacing)) if y_spacing > 0 else ax_vox
         self.pixel_dims['sagittal'] = (sag_w, sag_h)
 
+
     def create_title_bar(self):
-        """Create custom title bar with window controls"""
+        """Create custom title bar with window controls and tab bar"""
+        title_bar_container = QWidget()
+        title_bar_container.setObjectName("title_bar_container")
+        
+        container_layout = QVBoxLayout(title_bar_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        
+        # Top title bar
         title_bar = QWidget()
         title_bar.setObjectName("custom_title_bar")
         title_bar.setFixedHeight(35)
@@ -191,7 +200,7 @@ class MPRViewer(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-      # Title label
+        # Title label
         title_label = QLabel("SBME29 MPR")
         title_label.setObjectName("title_label")
         layout.addWidget(title_label)
@@ -204,8 +213,6 @@ class MPRViewer(QMainWindow):
         layout.addWidget(import_btn)
 
         layout.addStretch()
-
-        
 
         # Minimize button
         minimize_btn = QPushButton()
@@ -236,8 +243,57 @@ class MPRViewer(QMainWindow):
         title_bar.mouseMoveEvent = self.title_bar_mouse_move
         title_bar.mouseDoubleClickEvent = self.title_bar_double_click
 
-        return title_bar
+        container_layout.addWidget(title_bar)
+        
+        # Tab bar
+        tab_bar = QWidget()
+        tab_bar.setObjectName("tab_bar")
+        tab_bar.setFixedHeight(35)
+        
+        tab_layout = QHBoxLayout(tab_bar)
+        tab_layout.setContentsMargins(10, 0, 0, 0)
+        tab_layout.setSpacing(5)
+        
+        # MPR tab
+        mpr_tab = QPushButton("MPR")
+        mpr_tab.setObjectName("mpr_tab")
+        mpr_tab.setCheckable(True)
+        mpr_tab.setChecked(True)
+        mpr_tab.setFixedSize(80, 30)
+        tab_layout.addWidget(mpr_tab)
+        
+        # 3D tab
+        td_tab = QPushButton("3D")
+        td_tab.setObjectName("td_tab")
+        td_tab.setCheckable(True)
+        td_tab.setFixedSize(80, 30)
+        tab_layout.addWidget(td_tab)
+        
+        tab_layout.addStretch()
+        
+        container_layout.addWidget(tab_bar)
+        
+        return title_bar_container
 
+    def switch_to_tab(self, tab_name):
+        """Switch between MPR and 3D tabs"""
+        mpr_tab = self.findChild(QPushButton, "mpr_tab")
+        td_tab = self.findChild(QPushButton, "td_tab")
+        
+        if tab_name == "mpr":
+            mpr_tab.setChecked(True)
+            td_tab.setChecked(False)
+            # Show MPR view
+            self.viewing_area_widget.show()
+            # Hide 3D view if you have one
+        elif tab_name == "3d":
+            mpr_tab.setChecked(False)
+            td_tab.setChecked(True)
+            # Hide MPR view
+            # Show 3D view
+            QMessageBox.information(self, "3D View", "3D view not yet implemented")
+
+    
     def title_bar_mouse_press(self, event):
         """Handle mouse press on title bar for dragging"""
         if event.button() == Qt.LeftButton:

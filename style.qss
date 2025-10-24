@@ -334,3 +334,33 @@ QComboBox#segmentation_view_dropdown QAbstractItemView {
     selection-color: #1A202C;
     border: 1px solid #4A5568;
 }
+
+/* Tab bar styling */
+#tab_bar {
+    background-color: #1E293B;
+    border-bottom: 1px solid #334155;
+}
+
+#mpr_tab, #td_tab {
+    background-color: transparent;
+    color: #94A3B8;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 15px;
+}
+
+#mpr_tab:checked, #td_tab:checked {
+    color: #60A5FA;
+    border-bottom: 2px solid #60A5FA;
+    background-color: #334155;
+}
+
+#mpr_tab:hover, #td_tab:hover {
+    background-color: #334155;
+}
+
+#title_bar_container {
+    background-color: #1E293B;
+}
