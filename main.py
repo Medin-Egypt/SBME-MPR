@@ -521,6 +521,7 @@ class MPRViewer(QMainWindow):
             # Notify MPR widget to update
             self.mpr_widget.set_segmentation_visibility(True)
             self.mpr_widget.update_all_views()
+            self.td_widget.set_segmentations(self.segmentation_files)
             QMessageBox.information(
                 self, "Success", f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
             )
@@ -545,6 +546,9 @@ class MPRViewer(QMainWindow):
             # Notify MPR widget to update
             self.mpr_widget.set_segmentation_visibility(False)
             self.mpr_widget.update_all_views()
+
+            # Notify 3D widget
+            self.td_widget.clear_segmentations()
 
             QMessageBox.information(self, "Success", "All segmentation files have been deleted.")
 

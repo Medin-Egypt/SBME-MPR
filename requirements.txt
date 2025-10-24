@@ -4,3 +4,5 @@ pydicom
 nibabel
 numpy
 Tensorflow
+pyvistaqt
+pathlib
