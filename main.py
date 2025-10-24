@@ -7,17 +7,26 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QFrame, QGroupBox, QSizePolicy, QButtonGroup, QFileDialog, QMessageBox,
-    QDialog, QComboBox, QMenuBar, QAction
+    QDialog, QComboBox, QAction, QMenu
 )
 from PyQt5.QtCore import Qt, QSize, QEvent, QTimer, QPoint
 from PyQt5.QtGui import QPixmap, QIcon, QImage, QColor
 import utils.loader as loader
 import utils.detect_orientation as od
-from utils.ui_classes import SliceViewLabel, SliceCropDialog
+from utils.ui_classes import SliceCropDialog
+
+# Import the new widget classes
+from mpr_widget import MPRWidget
+from td_widget import TDWidget
+
 
 class MPRViewer(QMainWindow):
     def __init__(self, file_path=None):
         super().__init__()
+        # --- Instantiate Child Widgets ---
+        self.mpr_widget = MPRWidget(self)
+        self.td_widget = TDWidget(self)
+
         self.metadata = None
         self.setWindowTitle("MPR VIEWER")
         self.setGeometry(100, 100, 1200, 800)
@@ -28,70 +37,26 @@ class MPRViewer(QMainWindow):
         # Remove default title bar
         self.setWindowFlags(Qt.FramelessWindowHint)
 
-        self.view_colors = {
-            'axial': QColor(100, 220, 100),  # Green
-            'coronal': QColor(100, 150, 255),  # Blue
-            'sagittal': QColor(255, 100, 100),  # Red
-            'oblique': QColor(255, 255, 100),  # Yellow
-        }
-
+        # --- Data Properties (Owned by Main Window) ---
         self.data = None
         self.affine = None
         self.dims = None
-
-        self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0)}
-
         self.intensity_min = 0
         self.intensity_max = 255
         self.file_loaded = False
-
-        # Store original contrast values
         self.original_intensity_min = 0
         self.original_intensity_max = 255
-
-        # Crop bounds (normalized 0-1 coordinates)
         self.crop_bounds = None
         self.original_data = None
-        self.segmentation_files = []  # List of loaded segmentation file paths
-        self.segmentation_data_list = []  # List of numpy arrays for each segmentation
+        self.segmentation_files = []
+        self.segmentation_data_list = []
         self.original_segmentation_data_list = []
-        self.segmentation_visible = False  # Whether to show segmentation overlays
-        self.segmentation_view_selector = None  # Will hold the QComboBox
-        self.current_segmentation_source = 'axial'  # Default view to show
 
-        self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
-
-        self.slices = {
-            'axial': 0, 'coronal': 0, 'sagittal': 0, 'oblique': 0
-        }
-
-        self.rot_x_deg = 0
-        self.rot_y_deg = 0
-
-        self.view_labels = {}
-        self.view_panels = {}
-        self.maximized_view = None
-
-        self.main_views_enabled = True
-        self.oblique_view_enabled = False
-        self.segmentation_view_enabled = False
-        # 3D view modes
-        self.surface_mode_enabled = False
-        self.planes_mode_enabled = False
-
-        # Track window dragging
+        # --- Window Dragging ---
         self.drag_position = None
         self.is_maximized = False
 
-        # NEW properties for coordinated scaling/zooming
-        self.global_zoom_factor = 1.0
-        self.default_scale_factor = 1.0
-        # Oblique axis properties
-        self.oblique_axis_visible = False
-        self.oblique_axis_angle = 0  # Default angle in degrees
-        self.oblique_axis_dragging = False
-        self.oblique_axis_handle_size = 10  # Size of draggable handle
-        # Create main container widget
+        # --- Create main container ---
         container = QWidget()
         self.setCentralWidget(container)
         container_layout = QVBoxLayout(container)
@@ -101,29 +66,27 @@ class MPRViewer(QMainWindow):
         # Create custom title bar
         title_bar = self.create_title_bar()
         container_layout.addWidget(title_bar)
-       
-    
 
-        # Create content widget
+        # --- Create content widget ---
         content_widget = QWidget()
         main_layout = QHBoxLayout(content_widget)
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
 
         sidebar = self.create_sidebar()
-        self.viewing_area_widget = self.create_viewing_area()
-        self.td_view_widget = self.create_3d_view()
+
+
 
         main_layout.addWidget(sidebar)
-        # Fix: Duplicate addition of sidebar and viewing_area_widget removed
-        main_layout.addWidget(self.viewing_area_widget)
-        main_layout.addWidget(self.td_view_widget)
-        main_layout.setStretch(0, 0)
-        main_layout.setStretch(1, 1)
-        main_layout.setStretch(2, 1)
+        main_layout.addWidget(self.mpr_widget)
+        main_layout.addWidget(self.td_widget)
+        main_layout.setStretch(0, 0)  # Sidebar
+        main_layout.setStretch(1, 1)  # MPR Widget
+        main_layout.setStretch(2, 1)  # 3D Widget
 
         container_layout.addWidget(content_widget)
 
+        # --- Add Icons ---
         self.add_image_to_button("mpr_mode_btn_0", "Icons/windows.png", "3 Main Views")
         self.add_image_to_button("mpr_mode_btn_1", "Icons/heart.png", "Segmentation View")
         self.add_image_to_button("mpr_mode_btn_2", "Icons/diagram.png", "Oblique View")
@@ -138,6 +101,7 @@ class MPRViewer(QMainWindow):
         self.add_image_to_button("export_btn_0", "Icons/NII.png", "NIFTI Export")
         self.add_image_to_button("export_btn_1", "Icons/DIC.png", "DICOM Export")
 
+        # --- Set Initial State ---
         main_views_btn = self.findChild(QPushButton, "mpr_mode_btn_0")
         if main_views_btn:
             main_views_btn.setChecked(True)
@@ -146,58 +110,17 @@ class MPRViewer(QMainWindow):
         if default_tool:
             default_tool.setChecked(True)
 
-        content_widget.installEventFilter(self)
-
-        cine_btn = self.findChild(QPushButton, "tool_btn_1_2")
-        if cine_btn:
-            cine_btn.clicked.connect(self.handle_cine_button_toggle)
-
-        self.show_main_views_initially()
-
-    def _calculate_pixel_dims(self):
-        """
-        Calculates the aspect-ratio-corrected pixel dimensions for axial,
-        coronal, and sagittal views based on voxel spacing.
-        This should be called once after a file is loaded.
-        """
-        if self.dims is None or self.affine is None:
-            self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0)}
-            return
-
-        # Voxel spacing from the affine matrix diagonal
-        # Assuming affine[0,0]=x, affine[1,1]=y, affine[2,2]=z spacing
-        x_spacing = self.affine[0, 0]
-        y_spacing = self.affine[1, 1]
-        z_spacing = self.affine[2, 2]
-
-        # Raw voxel counts from data shape (Sagittal, Coronal, Axial)
-        sag_vox, cor_vox, ax_vox = self.dims[0], self.dims[1], self.dims[2]
-
-        # Calculate Axial view dimensions (Sagittal x Coronal plane)
-        ax_w = sag_vox
-        ax_h = int(cor_vox * (y_spacing / x_spacing)) if x_spacing > 0 else cor_vox
-        self.pixel_dims['axial'] = (ax_w, ax_h)
-
-        # Calculate Coronal view dimensions (Sagittal x Axial plane)
-        cor_w = sag_vox
-        cor_h = int(ax_vox * (z_spacing / x_spacing)) if x_spacing > 0 else ax_vox
-        self.pixel_dims['coronal'] = (cor_w, cor_h)
-
-        # Calculate Sagittal view dimensions (Coronal x Axial plane)
-        sag_w = cor_vox
-        sag_h = int(ax_vox * (z_spacing / y_spacing)) if y_spacing > 0 else ax_vox
-        self.pixel_dims['sagittal'] = (sag_w, sag_h)
-
+        self.switch_to_tab("mpr")  # Show MPR tab by default
 
     def create_title_bar(self):
         """Create custom title bar with window controls and tab bar"""
         title_bar_container = QWidget()
         title_bar_container.setObjectName("title_bar_container")
-        
+
         container_layout = QVBoxLayout(title_bar_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
-        
+
         # Top title bar
         title_bar = QWidget()
         title_bar.setObjectName("custom_title_bar")
@@ -211,8 +134,7 @@ class MPRViewer(QMainWindow):
         title_label = QLabel("SBME29 MPR")
         title_label.setObjectName("title_label")
         layout.addWidget(title_label)
-        layout.addSpacing(10)  
-
+        layout.addSpacing(10)
 
         # Add Import button next to title
         import_btn = QPushButton("Import")
@@ -220,8 +142,7 @@ class MPRViewer(QMainWindow):
         import_btn.setFixedHeight(30)
         import_btn.clicked.connect(self.show_import_menu)
         layout.addWidget(import_btn)
-        layout.addSpacing(10)  
-
+        layout.addSpacing(10)
 
         layout.addStretch()
 
@@ -255,16 +176,16 @@ class MPRViewer(QMainWindow):
         title_bar.mouseDoubleClickEvent = self.title_bar_double_click
 
         container_layout.addWidget(title_bar)
-        
+
         # Tab bar
         tab_bar = QWidget()
         tab_bar.setObjectName("tab_bar")
         tab_bar.setFixedHeight(35)
-        
+
         tab_layout = QHBoxLayout(tab_bar)
         tab_layout.setContentsMargins(10, 0, 0, 0)
         tab_layout.setSpacing(5)
-        
+
         # Create button group for tabs to make them mutually exclusive
         self.tab_button_group = QButtonGroup(self)
         self.tab_button_group.setExclusive(True)
@@ -291,924 +212,25 @@ class MPRViewer(QMainWindow):
         mpr_tab.clicked.connect(lambda: self.switch_to_tab("mpr"))
         td_tab.clicked.connect(lambda: self.switch_to_tab("3d"))
         container_layout.addWidget(tab_bar)
-        
+
         return title_bar_container
 
     def switch_to_tab(self, tab_name):
         """Switch between MPR and 3D tabs"""
         if tab_name == "mpr":
             # Show MPR view, hide 3D view
-            self.viewing_area_widget.show()
-            self.td_view_widget.hide()
+            self.mpr_widget.show()
+            self.td_widget.hide()
             # Show MPR mode buttons, hide 3D mode buttons
             self.mpr_mode_group.show()
             self.td_mode_group.hide()
         elif tab_name == "3d":
             # Hide MPR view, show 3D view
-            self.viewing_area_widget.hide()
-            self.td_view_widget.show()
+            self.mpr_widget.hide()
+            self.td_widget.show()
             # Hide MPR mode buttons, show 3D mode buttons
             self.mpr_mode_group.hide()
             self.td_mode_group.show()
-
-    
-    def title_bar_mouse_press(self, event):
-        """Handle mouse press on title bar for dragging"""
-        if event.button() == Qt.LeftButton:
-            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
-            event.accept()
-
-    def title_bar_mouse_move(self, event):
-        """Handle mouse move on title bar for dragging"""
-        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
-            if self.is_maximized:
-                # Restore window when dragging from maximized state
-                self.toggle_maximize()
-                # Adjust drag position for restored window size
-                self.drag_position = QPoint(self.width() // 2, 10)
-            self.move(event.globalPos() - self.drag_position)
-            event.accept()
-
-    def title_bar_double_click(self, event):
-        """Handle double click on title bar to maximize/restore"""
-        if event.button() == Qt.LeftButton:
-            self.toggle_maximize()
-
-    def toggle_maximize(self):
-        """Toggle between maximized and normal window state"""
-        if self.is_maximized:
-            self.showNormal()
-            self.is_maximized = False
-            self.maximize_btn.setIcon(QIcon("Icons/window-maximize.png"))
-        else:
-            self.showMaximized()
-            self.is_maximized = True
-            self.maximize_btn.setIcon(QIcon("Icons/browsers.png"))
-
-
-
-
-    def show_slice_crop_dialog(self):
-        """Shows a dialog to get a slice range and applies the crop."""
-        if not self.file_loaded or self.original_data is None:
-            QMessageBox.warning(self, "No File", "Please load a file first.")
-            return
-
-        # Use original_data to always know the full slice range
-        total_slices = self.original_data.shape[2]
-        dialog = SliceCropDialog(total_slices, self)
-
-        if dialog.exec_() == QDialog.Accepted:
-            start, end = dialog.get_values()
-
-            if start >= end:
-                QMessageBox.critical(self, "Input Error", "The 'from' slice must be smaller than the 'to' slice.")
-                return
-
-            # Convert 1-based UI values to 0-based numpy indices
-            start_idx = start - 1
-            end_idx = end - 1
-
-            self.apply_slice_crop(start_idx, end_idx)
-
-    def apply_slice_crop(self, start_idx, end_idx):
-        """Crops the data volume to the specified slice range (axial)."""
-        if self.original_data is None:
-            return
-
-        # Crop the original data along the axial (3rd) axis
-        self.data = self.original_data[:, :, start_idx : end_idx + 1].copy()
-        self.dims = self.data.shape
-
-        if self.segmentation_data_list:
-            for i in range(len(self.segmentation_data_list)):
-                self.segmentation_data_list[i] = self.segmentation_data_list[i][:, :, start_idx : end_idx + 1].copy()
-
-        # Reset views to the new, smaller volume
-        self.reset_crosshair_and_slices()
-        self.update_all_views()
-
-        QMessageBox.information(self, "Crop Applied",
-                                f"Volume cropped to show slices {start_idx + 1} to {end_idx + 1}.\n"
-                                f"New dimensions: {self.dims}")
-
-    # --- Coordinated Zoom Logic ---
-
-    def change_global_zoom(self, delta):
-        """Updates the global zoom factor and applies it to all views."""
-        if not self.file_loaded:
-            return
-
-        zoom_step = 1.15
-
-        if delta > 0:
-            new_zoom = self.global_zoom_factor * zoom_step
-            self.global_zoom_factor = min(new_zoom, 10.0)
-        else:
-            new_zoom = self.global_zoom_factor / zoom_step
-            self.global_zoom_factor = max(new_zoom, 1.0)
-
-        for label in self.view_labels.values():
-            if isinstance(label, SliceViewLabel):
-                label.zoom_factor = self.global_zoom_factor
-                if self.global_zoom_factor == 1.0:
-                    label.pan_offset_x = 0
-                    label.pan_offset_y = 0
-                label._apply_zoom_and_pan()
-
-    # --- Reset logic methods ---
-
-    def on_reset_clicked(self):
-        """Handler for the Reset button. Resets the currently active tool."""
-        if not self.file_loaded:
-            return
-
-        checked_btn = self.tools_group_buttons.checkedButton()
-        if not checked_btn:
-            return
-
-        btn_name = checked_btn.objectName()
-
-        if btn_name == "tool_btn_0_0":
-            self.reset_crosshair_and_slices()
-        elif btn_name == "tool_btn_0_1":
-            self.reset_contrast()
-        elif btn_name == "tool_btn_0_2":
-            self.reset_all_zooms()
-        elif btn_name == "tool_btn_1_0":
-            self.reset_crop()
-        elif btn_name == "tool_btn_1_1":
-            self.reset_rotation()
-
-        self.update_all_views()
-
-    def reset_all_zooms(self):
-        """Resets the global zoom factor and all view-specific pan offsets."""
-        self.global_zoom_factor = 1.0
-        for label in self.view_labels.values():
-            if isinstance(label, SliceViewLabel):
-                label.zoom_factor = 1.0
-                label.pan_offset_x = 0
-                label.pan_offset_y = 0
-        self.update_all_views()
-
-    def reset_contrast(self):
-        """Resets the window/level to the initial values from file load."""
-        self.intensity_min = self.original_intensity_min
-        self.intensity_max = self.original_intensity_max
-
-    def reset_rotation(self):
-        """Resets the oblique rotation angles to default."""
-        self.rot_x_deg = 0
-        self.rot_y_deg = 0
-        self.oblique_axis_angle = 0
-
-    def reset_crosshair_and_slices(self):
-        """Resets crosshairs to the center and slices to the middle."""
-        self.norm_coords = {'S': 0.5, 'C': 0.5, 'A': 0.5}
-        if self.dims:
-            self.slices['axial'] = self.dims[2] // 2
-            self.slices['coronal'] = self.dims[1] // 2
-            self.slices['sagittal'] = self.dims[0] // 2
-            self.slices['oblique'] = self.dims[2] // 2
-
-    def reset_crop(self):
-        """Resets the crop to show the full volume."""
-        if self.original_data is not None:
-            self.data = self.original_data.copy()
-            self.dims = self.data.shape
-            self.crop_bounds = None
-            
-            if hasattr(self, 'original_segmentation_data_list') and self.original_segmentation_data_list:
-                self.segmentation_data_list = [seg.copy() for seg in self.original_segmentation_data_list]
-            
-            self.reset_crosshair_and_slices()
-
-    def set_slice_from_crosshair(self, source_view, norm_x, norm_y):
-        """Updates slice indices based on the normalized crosshair position from a source view."""
-        if not self.file_loaded or self.dims is None:
-            return
-
-        norm_x = max(0.0, min(1.0, norm_x))
-        norm_y = max(0.0, min(1.0, norm_y))
-
-        if source_view == 'axial':
-            self.norm_coords['S'] = norm_x
-            self.norm_coords['C'] = norm_y
-            self.slices['coronal'] = int(norm_y * (self.dims[1] - 1))
-            self.slices['sagittal'] = int(norm_x * (self.dims[0] - 1))
-        elif source_view == 'coronal':
-            self.norm_coords['S'] = norm_x
-            self.norm_coords['A'] = norm_y
-            self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
-            self.slices['sagittal'] = int(norm_x * (self.dims[0] - 1))
-        elif source_view == 'sagittal':
-            self.norm_coords['C'] = norm_x
-            self.norm_coords['A'] = norm_y
-            self.slices['axial'] = int((1 - norm_y) * (self.dims[2] - 1))
-            self.slices['coronal'] = int(norm_x * (self.dims[1] - 1))
-
-
-        self.update_all_views()
-
-    def set_slice_from_scroll(self, view_type, new_slice_index):
-        """
-        Updates a slice index from scrolling or cine mode, recalculates the
-        corresponding normalized coordinate for the crosshair, and updates all views.
-        """
-        if not self.file_loaded or self.dims is None:
-            return
-
-        self.slices[view_type] = new_slice_index
-
-        # If scrolling in oblique view, only update that view without syncing crosshairs
-        if view_type == 'oblique':
-            self.update_view('oblique', 'oblique')
-            return
-
-        if view_type == 'axial':
-            if self.dims[2] > 1:
-                self.norm_coords['A'] = 1.0 - (new_slice_index / (self.dims[2] - 1))
-        elif view_type == 'coronal':
-            if self.dims[1] > 1:
-                self.norm_coords['C'] = new_slice_index / (self.dims[1] - 1)
-        elif view_type == 'sagittal':
-            if self.dims[0] > 1:
-                self.norm_coords['S'] = new_slice_index / (self.dims[0] - 1)
-
-        self.update_all_views()
-
-    def calculate_and_set_uniform_default_scale(self):
-        """Calculates the minimum non-distorting scale factor across all visible views."""
-        if not self.file_loaded or not self.dims:
-            self.default_scale_factor = 1.0
-            return
-
-        min_scale = float('inf')
-
-        # Get list of currently visible main views
-        views_to_check = []
-        if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
-            views_to_check.extend(['coronal', 'sagittal', 'axial'])
-        if self.oblique_view_enabled:
-            views_to_check.append('oblique')
-
-        for view_name in views_to_check:
-            label = self.view_labels.get(view_name)
-            if not label or not label.isVisible() or label.width() < 10 or label.height() < 10:
-                continue
-
-            if view_name in self.pixel_dims:
-                img_w, img_h = self.pixel_dims[view_name]
-            else:
-                img_w, img_h = self.pixel_dims['axial']
-
-            if img_w > 0 and img_h > 0:
-                scale_w = label.width() / img_w
-                scale_h = label.height() / img_h
-                current_scale = min(scale_w, scale_h)
-                min_scale = min(min_scale, current_scale)
-
-        self.default_scale_factor = min_scale
-
-    def update_all_views(self):
-        views_to_update = []
-        if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
-            views_to_update.extend([
-                ('coronal', 'coronal'), ('sagittal', 'sagittal'), ('axial', 'axial')
-            ])
-        if self.oblique_view_enabled:
-            views_to_update.append(('oblique', 'oblique'))
-        if self.segmentation_view_enabled:
-            views_to_update.append(('segmentation', 'segmentation'))
-
-        # Calculate uniform base scale before updating views
-        self.calculate_and_set_uniform_default_scale()
-
-        for ui_title, view_type in views_to_update:
-            self.update_view(ui_title, view_type, sync_crosshair=True)
-
-    def open_nifti_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open NIfTI File", "",
-                                                   "NIfTI Files (*.nii *.nii.gz);;All Files (*)")
-        if file_path:
-            try:
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, self.metadata = loader.load_nifti_data(
-                    file_path)
-                self.file_loaded = True
-
-                self._calculate_pixel_dims()
-
-                # Store original contrast values on load
-                self.original_intensity_min = self.intensity_min
-                self.original_intensity_max = self.intensity_max
-
-                # Store original data for crop reset
-                self.original_data = self.data.copy()
-                self.crop_bounds = None
-
-                self.reset_crosshair_and_slices()
-                self.reset_all_zooms()
-                self.reset_rotation()
-
-                self.show_main_views_initially()
-                self.update_all_views()
-                QMessageBox.information(self, "Success", f"NIfTI file loaded successfully!\nDimensions: {self.dims}")
-            except Exception as e:
-
-                QMessageBox.critical(self, "Error", f"Failed to load NIfTI file:\n{str(e)}")
-
-    def open_dicom_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Select DICOM Folder", "", QFileDialog.ShowDirsOnly)
-        if folder_path:
-            try:
-                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, self.metadata = loader.load_dicom_data(
-                    folder_path)
-                self.file_loaded = True
-
-                self._calculate_pixel_dims()
-
-                # Store original contrast values on load
-                self.original_intensity_min = self.intensity_min
-                self.original_intensity_max = self.intensity_max
-
-                # Store original data for crop reset
-                self.original_data = self.data.copy()
-                self.crop_bounds = None
-
-                self.reset_crosshair_and_slices()
-                self.reset_all_zooms()  # Resets global zoom factor
-                self.reset_rotation()
-
-                orientation, confidence, _ = od.predict_middle_dicom_from_folder(folder_path)
-                orientation_info = f"\n\nDetected Orientation: {orientation} with confidence: {(confidence*100):.2f}%"
-
-                meta_info = f"Body Part Examined: {self.metadata.get('BodyPartExamined')}\nStudy Description: {self.metadata.get('StudyDescription')}"
-
-                self.show_main_views_initially()
-                self.update_all_views()  # Triggers uniform default scale calculation
-
-                QMessageBox.information(
-                    self, "Success",
-                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{meta_info}"
-                )
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
-
-    def load_segmentation_files(self):
-        """Opens a file dialog to select multiple NIfTI segmentation files."""
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Select Segmentation Files",
-            "",
-            "NIfTI Files (*.nii *.nii.gz);;All Files (*)"
-        )
-
-        if not file_paths:
-            return
-
-        if not self.file_loaded:
-            QMessageBox.warning(self, "No Data", "Please load a main file first.")
-            return
-
-        # Clear existing segmentations
-        self.segmentation_files = []
-        self.segmentation_data_list = []
-        self.original_segmentation_data_list = []  # Store original segmentation data for crop reset
-
-        # Load each segmentation file
-        for file_path in file_paths:
-            try:
-                nifti_file = nib.load(file_path)
-                seg_data = nifti_file.get_fdata()
-
-                # Apply the same flip as the main data
-                seg_data = seg_data[::-1, :, :]
-
-                # Check if dimensions match
-                if seg_data.shape != self.data.shape:
-                    QMessageBox.warning(
-                        self,
-                        "Dimension Mismatch",
-                        f"Segmentation file {os.path.basename(file_path)} has different dimensions.\n"
-                        f"Expected: {self.data.shape}, Got: {seg_data.shape}"
-                    )
-                    continue
-
-                self.segmentation_files.append(file_path)
-                self.segmentation_data_list.append(seg_data)
-
-            except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to load segmentation file {os.path.basename(file_path)}:\n{str(e)}"
-                )
-
-        if self.segmentation_data_list:
-            self.segmentation_visible = True
-            self.update_all_views()
-            QMessageBox.information(
-                self,
-                "Success",
-                f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
-            )
-
-    def delete_segmentation_files(self):
-        """Deletes all loaded segmentation files."""
-        if not self.segmentation_data_list:
-            QMessageBox.information(self, "No Segmentation", "No segmentation files are currently loaded.")
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Delete Segmentation",
-            f"Are you sure you want to delete all {len(self.segmentation_data_list)} segmentation file(s)?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-
-        if reply == QMessageBox.Yes:
-            # Clear all segmentation data
-            self.segmentation_files = []
-            self.segmentation_data_list = []
-            self.original_segmentation_data_list = []
-            self.segmentation_visible = False
-
-            # Update all views to remove overlays
-            self.update_all_views()
-
-            QMessageBox.information(
-                self,
-                "Success",
-                "All segmentation files have been deleted."
-            )
-
-    def handle_cine_button_toggle(self, checked):
-        if not checked:
-            for label in self.view_labels.values():
-                if isinstance(label, SliceViewLabel):
-                    label.stop_cine()
-
-    def handle_rotate_mode_toggle(self, checked):
-        """Show/hide oblique axis based on rotate mode and current view"""
-        if self.oblique_view_enabled:
-            self.update_view('coronal', 'coronal', sync_crosshair=True)
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Resize:
-            if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
-                if not hasattr(self, '_resize_timer'):
-                    self._resize_timer = QTimer()
-                    self._resize_timer.setSingleShot(True)
-                    self._resize_timer.timeout.connect(self.update_visible_views)
-                self._resize_timer.stop()
-                self._resize_timer.start(50)
-        return super().eventFilter(obj, event)
-
-    def numpy_to_qpixmap(self, array_2d: np.ndarray) -> QPixmap:
-        if array_2d.dtype != np.uint8:
-            array_2d = array_2d.astype(np.uint8)
-        h, w = array_2d.shape
-        q_img = QImage(array_2d.tobytes(), w, h, w, QImage.Format_Grayscale8)
-        return QPixmap.fromImage(q_img)
-
-    def add_segmentation_overlay(self, base_pixmap, view_type):
-        """Adds red outline overlay from segmentation data to the pixmap."""
-        from PyQt5.QtGui import QPainter, QPen
-
-        # Convert pixmap to QImage for painting
-        image = base_pixmap.toImage()
-        painter = QPainter(image)
-        pen = QPen(QColor(255, 0, 0), 2)  # Red color, 2px width
-        painter.setPen(pen)
-
-        # Get the current slice for this view
-        if view_type == 'axial':
-            slice_idx = self.slices['axial']
-        elif view_type == 'coronal':
-            slice_idx = self.slices['coronal']
-        elif view_type == 'sagittal':
-            slice_idx = self.slices['sagittal']
-        elif view_type == 'oblique':
-            painter.end()
-            return QPixmap.fromImage(image)
-        else:
-            painter.end()
-            return base_pixmap
-
-        # Process each loaded segmentation
-        for seg_data in self.segmentation_data_list:
-            # Extract the slice from segmentation data
-            if view_type == 'axial':
-                seg_slice = seg_data[:, :, slice_idx]
-                seg_slice = np.flipud(np.rot90(seg_slice))
-            elif view_type == 'coronal':
-                seg_slice = seg_data[:, slice_idx, :]
-                seg_slice = np.rot90(seg_slice)
-            elif view_type == 'sagittal':
-                seg_slice = seg_data[slice_idx, :, :]
-                seg_slice = np.rot90(seg_slice)
-
-            # Find edges/contours in the segmentation
-            from scipy import ndimage
-
-            # Create binary mask
-            mask = seg_slice > 0.5
-
-            if not mask.any():
-                continue
-
-            # Find edges using morphological operations
-            eroded = ndimage.binary_erosion(mask)
-            edges = mask & ~eroded
-
-            # Scale factor to match pixmap size
-            scale_y = base_pixmap.height() / edges.shape[0]
-            scale_x = base_pixmap.width() / edges.shape[1]
-
-            # Draw the edges
-            edge_coords = np.argwhere(edges)
-            for y, x in edge_coords:
-                scaled_x = int(x * scale_x)
-                scaled_y = int(y * scale_y)
-                painter.drawPoint(scaled_x, scaled_y)
-
-        painter.end()
-        return QPixmap.fromImage(image)
-
-    def update_view(self, ui_title: str, view_type: str, sync_crosshair=False):
-        if ui_title not in self.view_labels:
-            return
-        label = self.view_labels[ui_title]
-        # Only check visibility, let the label's apply_zoom handle the rest of the scaling
-        if not label.isVisible():
-            return
-        if not self.file_loaded or self.data is None:
-            return
-
-        if view_type == 'segmentation':
-            self.update_segmentation_view()
-            return
-
-        slice_data = loader.get_slice_data(
-            self.data, self.dims, self.slices, self.affine,
-            self.intensity_min, self.intensity_max,
-            rot_x_deg=self.rot_x_deg, rot_y_deg=self.rot_y_deg,
-            view_type=view_type,
-            norm_coords=self.norm_coords  # Pass normalized coordinates
-        )
-
-        pixmap = self.numpy_to_qpixmap(slice_data)
-
-        if self.segmentation_visible and self.segmentation_data_list and view_type != 'segmentation':
-            pixmap = self.add_segmentation_overlay(pixmap, view_type)
-
-        if isinstance(label, SliceViewLabel):
-            # Ensure the label's zoom factor is synchronized
-            label.zoom_factor = self.global_zoom_factor
-            label.set_image_pixmap(pixmap)
-
-            if sync_crosshair:
-                if view_type == 'axial':
-                    norm_x, norm_y = self.norm_coords['S'], self.norm_coords['C']
-                elif view_type == 'coronal':
-                    norm_x, norm_y = self.norm_coords['S'], self.norm_coords['A']
-                elif view_type == 'sagittal':
-                    norm_x, norm_y = self.norm_coords['C'], self.norm_coords['A']
-                elif view_type == 'oblique':
-                    # No crosshair/origin marker in oblique view
-                    norm_x, norm_y = 0.5, 0.5
-                else:
-                    norm_x, norm_y = 0.5, 0.5
-
-                label.set_normalized_crosshair(norm_x, norm_y)
-
-                # For oblique view, hide all crosshair elements (lines and center point)
-                if view_type == 'oblique':
-                    label.show_only_center_point = False
-                    label.hide_crosshair_completely = True
-                else:
-                    label.show_only_center_point = False
-                    label.hide_crosshair_completely = False
-
-            if view_type == 'coronal' and self.oblique_view_enabled:
-                label.oblique_axis_angle = self.oblique_axis_angle
-                label.oblique_axis_visible = self.oblique_axis_visible
-            else:
-                label.oblique_axis_visible = False
-        else:
-            scaled = pixmap.scaled(
-                QSize(label.size().width() - 2, label.size().height() - 2),
-                Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            label.setPixmap(scaled)
-
-    def draw_oblique_axis(self, label, view_type):
-        """Draw the oblique axis on the coronal view"""
-        if view_type != 'coronal' or not self.oblique_axis_visible:
-            return
-
-        if not isinstance(label, SliceViewLabel):
-            return
-
-        label.oblique_axis_angle = self.oblique_axis_angle
-        label.oblique_axis_visible = True
-        label.update()
-
-    def update_segmentation_view(self):
-        if 'segmentation' not in self.view_labels:
-            return
-
-        label = self.view_labels['segmentation']
-
-        # If no segmentation loaded, show the default text
-        if not self.segmentation_data_list:
-            label.setText("Segmentation View\n\n[Add your segmentation data here]")
-            return
-
-        # Use the dropdown selection to determine which view to show
-        source_view = self.current_segmentation_source
-
-        # Get the current slice for the source view
-        if source_view == 'axial':
-            slice_idx = self.slices['axial']
-            view_type = 'axial'
-        elif source_view == 'coronal':
-            slice_idx = self.slices['coronal']
-            view_type = 'coronal'
-        elif source_view == 'sagittal':
-            slice_idx = self.slices['sagittal']
-            view_type = 'sagittal'
-        else:
-            slice_idx = self.slices['axial']
-            view_type = 'axial'
-
-        # Get the correct pixel dimensions for this view (maintains aspect ratio)
-        if view_type in self.pixel_dims:
-            correct_width, correct_height = self.pixel_dims[view_type]
-        else:
-            correct_width, correct_height = self.pixel_dims['axial']
-
-        from PyQt5.QtGui import QImage, QPainter, QPen
-
-        # Create image with correct aspect ratio
-        seg_image = QImage(correct_width, correct_height, QImage.Format_RGB32)
-        seg_image.fill(QColor(0, 0, 0))  # Black background
-
-        painter = QPainter(seg_image)
-
-        # Process each loaded segmentation
-        for seg_data in self.segmentation_data_list:
-            if view_type == 'axial':
-                seg_slice = seg_data[:, :, slice_idx]
-                seg_slice = np.flipud(np.rot90(seg_slice))
-            elif view_type == 'coronal':
-                seg_slice = seg_data[:, slice_idx, :]
-                seg_slice = np.rot90(seg_slice)
-            elif view_type == 'sagittal':
-                seg_slice = seg_data[slice_idx, :, :]
-                seg_slice = np.rot90(seg_slice)
-
-            # Find edges/contours in the segmentation
-            from scipy import ndimage
-
-            # Create binary mask
-            mask = seg_slice > 0.5
-
-            if not mask.any():
-                continue
-
-            eroded = ndimage.binary_erosion(mask)
-            edges = mask & ~eroded
-
-            # Scale factor to match the correct dimensions
-            scale_y = correct_height / edges.shape[0]
-            scale_x = correct_width / edges.shape[1]
-
-            # Draw the edges in red
-            pen = QPen(QColor(255, 0, 0), 2)  # Red color, 2px width
-            painter.setPen(pen)
-
-            edge_coords = np.argwhere(edges)
-            for y, x in edge_coords:
-                scaled_x = int(x * scale_x)
-                scaled_y = int(y * scale_y)
-                painter.drawPoint(scaled_x, scaled_y)
-
-        painter.end()
-
-        pixmap = QPixmap.fromImage(seg_image)
-
-        scaled_pixmap = pixmap.scaled(
-            label.size(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
-
-        label.setPixmap(scaled_pixmap)
-
-    def on_segmentation_view_changed(self, view_name):
-        """Callback when the segmentation view dropdown changes."""
-        self.current_segmentation_source = view_name.lower()
-        if self.segmentation_view_enabled:
-            self.update_segmentation_view()
-
-    def update_visible_views(self):
-        # When resizing, recalculate the uniform scale and then update all visible views
-        self.calculate_and_set_uniform_default_scale()
-
-        visible_views = [name for name, panel in self.view_panels.items() if panel.isVisible()]
-        for view_name in visible_views:
-            self.update_view(view_name, view_name, sync_crosshair=True)
-
-    def maximize_view(self, view_name):
-        if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled):
-            return
-
-        self.maximized_view = view_name
-
-        for name, panel in self.view_panels.items():
-            if name != view_name:
-                panel.hide()
-            else:
-                self.viewing_grid.removeWidget(panel)
-                self.viewing_grid.addWidget(panel, 0, 0, 2, 2)
-                panel.show()
-
-        self.viewing_grid.invalidate()
-        QApplication.processEvents()
-        self.update_visible_views()
-
-    def restore_views(self):
-        if self.maximized_view is None:
-            return
-
-        max_panel = self.view_panels[self.maximized_view]
-        self.viewing_grid.removeWidget(max_panel)
-        self.maximized_view = None
-
-        # Panels list to restore the grid layout structure
-        panels = [
-            ("Coronal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
-            ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
-            ("Segmentation", 'segmentation', 1, 1)
-        ]
-
-        for title, view_type, row, col in panels:
-            panel = self.view_panels[title.lower()]
-            # Ensure the widget is not already in the layout before adding it
-            if self.viewing_grid.indexOf(panel) == -1:
-                self.viewing_grid.addWidget(panel, row, col)
-
-        # Restore visibility based on current mode
-        if self.main_views_enabled:
-            self.toggle_main_views(True)
-        elif self.oblique_view_enabled:
-            self.toggle_oblique_view(True)
-        elif self.segmentation_view_enabled:
-            self.toggle_segmentation_view(True)
-
-        self.viewing_grid.invalidate()
-        QApplication.processEvents()
-        self.update_visible_views()
-
-    def show_main_views_initially(self):
-        self.main_views_enabled = True
-        self.oblique_view_enabled = False
-        self.segmentation_view_enabled = False
-
-        # Ensure correct widgets are added to the grid if they were removed
-        self.restore_views()
-
-        for view_name, panel in self.view_panels.items():
-            if view_name in ['coronal', 'sagittal', 'axial']:
-                panel.show()
-                # Update is handled by update_visible_views in the end
-            else:
-                panel.hide()
-
-    def toggle_main_views(self, checked):
-        if not checked:
-            return
-
-        self.restore_views()
-        self.main_views_enabled = True
-        self.oblique_view_enabled = False
-        self.segmentation_view_enabled = False
-        self.segmentation_visible = True if self.segmentation_data_list else False
-
-        self.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
-        self.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
-
-        for view_name, panel in self.view_panels.items():
-            if view_name in ['coronal', 'sagittal', 'axial']:
-                panel.show()
-            else:
-                panel.hide()
-
-        self.update_visible_views()
-
-    def toggle_oblique_view(self, checked):
-        if not checked and self.oblique_view_enabled:
-            self.toggle_main_views(True)
-            self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(True)
-            return
-
-        self.restore_views()
-        self.oblique_view_enabled = True
-        self.main_views_enabled = False
-        self.segmentation_view_enabled = False
-        self.segmentation_visible = True if self.segmentation_data_list else False
-
-        # Always show oblique axis in oblique view mode
-        self.oblique_axis_visible = True
-
-        self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
-        self.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
-
-        for view_name, panel in self.view_panels.items():
-            if view_name in ['coronal', 'sagittal', 'axial', 'oblique']:
-                panel.show()
-                if view_name == 'oblique':
-                    self.viewing_grid.removeWidget(panel)
-                    self.viewing_grid.addWidget(panel, 1, 1)
-            else:
-                panel.hide()
-
-        self.update_visible_views()
-
-    def toggle_segmentation_view(self, checked):
-        if not checked and self.segmentation_view_enabled:
-            self.toggle_main_views(True)
-            self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(True)
-            return
-
-        self.restore_views()
-        self.segmentation_view_enabled = True
-        self.main_views_enabled = False
-        self.oblique_view_enabled = False
-
-        self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
-        self.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
-
-        for view_name, panel in self.view_panels.items():
-            if view_name in ['coronal', 'sagittal', 'axial', 'segmentation']:
-                panel.show()
-                if view_name == 'segmentation':
-                    # Ensure segmentation is placed in 1,1
-                    self.viewing_grid.removeWidget(panel)
-                    self.viewing_grid.addWidget(panel, 1, 1)
-            else:
-                panel.hide()
-
-        self.update_visible_views()
-
-    def toggle_surface_mode(self, checked):
-        """Toggle surface rendering mode in 3D view"""
-        if checked:
-            self.surface_mode_enabled = True
-            self.planes_mode_enabled = False
-            # Add your surface mode logic here
-            print("Surface mode activated")
-
-    def toggle_planes_mode(self, checked):
-        """Toggle planes mode in 3D view"""
-        if checked:
-            self.planes_mode_enabled = True
-            self.surface_mode_enabled = False
-            # Add your planes mode logic here
-            print("Planes mode activated")
-
-  # def create_sidebar(self):
-        #sidebar = QFrame()
-        #sidebar.setObjectName("sidebar")
-        #sidebar.setFrameStyle(QFrame.Box)
-        #sidebar.setFixedWidth(200)
-
-        #layout = QVBoxLayout(sidebar)
-        #layout.setSpacing(20)
-        #layout.setContentsMargins(10, 10, 10, 10)
-
- 
- 
- # def create_menu_bar(self):
-#     """Create menu bar with Import menu"""
-#     menubar = QMenuBar()
-#     # Create Import menu
-#     import_menu = menubar.addMenu("Import")
-#     
-#     # Add Open DICOM action
-#     open_dicom_action = QAction("Open DICOM", self)
-#     open_dicom_action.triggered.connect(self.open_dicom_folder)
-#     import_menu.addAction(open_dicom_action)
-#     
-#     # Add Open NIfTI action
-#     open_nifti_action = QAction("Open NIfTI", self)
-#     open_nifti_action.triggered.connect(self.open_nifti_file)
-#     import_menu.addAction(open_nifti_action)
-#     
-#     return menubar
 
     def create_sidebar(self):
         sidebar = QFrame()
@@ -1219,14 +241,6 @@ class MPRViewer(QMainWindow):
         layout = QVBoxLayout(sidebar)
         layout.setSpacing(20)
         layout.setContentsMargins(10, 10, 10, 10)
-
-        # ADD IMPORT BUTTON HERE
-        #import_btn = QPushButton("Import")
-        #import_btn.setObjectName("import_btn")
-        #import_btn.setMinimumHeight(40)
-        #import_btn.setToolTip("Import DICOM or NIfTI files")
-        #import_btn.clicked.connect(self.show_import_menu)
-        #layout.addWidget(import_btn)
 
         # MPR Mode section (only visible in MPR tab)
         self.mpr_mode_group = QGroupBox("Mode:")
@@ -1243,11 +257,14 @@ class MPRViewer(QMainWindow):
             mpr_mode_buttons_layout.addWidget(btn, 0, i)
             self.mpr_mode_group_buttons.addButton(btn, i)
             if i == 0:
-                btn.clicked.connect(self.toggle_main_views)
+                # Connect to the method in MPRWidget
+                btn.clicked.connect(self.mpr_widget.toggle_main_views)
             elif i == 1:
-                btn.clicked.connect(self.toggle_segmentation_view)
+                # Connect to the method in MPRWidget
+                btn.clicked.connect(self.mpr_widget.toggle_segmentation_view)
             elif i == 2:
-                btn.clicked.connect(self.toggle_oblique_view)
+                # Connect to the method in MPRWidget
+                btn.clicked.connect(self.mpr_widget.toggle_oblique_view)
 
         mpr_mode_layout.addWidget(mpr_mode_buttons_widget)
         self.mpr_mode_group.setLayout(mpr_mode_layout)
@@ -1268,9 +285,11 @@ class MPRViewer(QMainWindow):
             td_mode_buttons_layout.addWidget(btn, 0, i)
             self.td_mode_group_buttons.addButton(btn, i)
             if i == 0:
-                btn.clicked.connect(self.toggle_surface_mode)
+                # Connect to the method in TDWidget
+                btn.clicked.connect(self.td_widget.toggle_surface_mode)
             elif i == 1:
-                btn.clicked.connect(self.toggle_planes_mode)
+                # Connect to the method in TDWidget
+                btn.clicked.connect(self.td_widget.toggle_planes_mode)
 
         td_mode_layout.addWidget(td_mode_buttons_widget)
         self.td_mode_group.setLayout(td_mode_layout)
@@ -1318,9 +337,14 @@ class MPRViewer(QMainWindow):
                     btn.setCheckable(True)
                     self.tools_group_buttons.addButton(btn, r * 3 + c)
 
+        # Connect cine and rotate buttons to their handlers in MPRWidget
+        cine_btn = self.findChild(QPushButton, "tool_btn_1_2")
+        if cine_btn:
+            cine_btn.clicked.connect(self.mpr_widget.handle_cine_button_toggle)
+
         rotate_btn = self.findChild(QPushButton, "tool_btn_1_1")
         if rotate_btn:
-            rotate_btn.clicked.connect(self.handle_rotate_mode_toggle)
+            rotate_btn.clicked.connect(self.mpr_widget.handle_rotate_mode_toggle)
 
         tools_main_layout.addWidget(tools_grid_widget)
 
@@ -1354,22 +378,268 @@ class MPRViewer(QMainWindow):
 
     def show_import_menu(self):
         """Show import options menu"""
-        from PyQt5.QtWidgets import QMenu
-        
         menu = QMenu(self)
-        
+
         open_dicom = menu.addAction("Open DICOM")
         open_dicom.triggered.connect(self.open_dicom_folder)
-        
+
         open_nifti = menu.addAction("Open NIfTI")
         open_nifti.triggered.connect(self.open_nifti_file)
-        
+
         # Show menu at the import button
         import_btn = self.sender()
         menu.exec_(import_btn.mapToGlobal(import_btn.rect().bottomLeft()))
 
+    # --- Window Dragging Methods ---
 
-    
+    def title_bar_mouse_press(self, event):
+        """Handle mouse press on title bar for dragging"""
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def title_bar_mouse_move(self, event):
+        """Handle mouse move on title bar for dragging"""
+        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
+            if self.is_maximized:
+                # Restore window when dragging from maximized state
+                self.toggle_maximize()
+                # Adjust drag position for restored window size
+                self.drag_position = QPoint(self.width() // 2, 10)
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+
+    def title_bar_double_click(self, event):
+        """Handle double click on title bar to maximize/restore"""
+        if event.button() == Qt.LeftButton:
+            self.toggle_maximize()
+
+    def toggle_maximize(self):
+        """Toggle between maximized and normal window state"""
+        if self.is_maximized:
+            self.showNormal()
+            self.is_maximized = False
+            self.maximize_btn.setIcon(QIcon("Icons/window-maximize.png"))
+        else:
+            self.showMaximized()
+            self.is_maximized = True
+            self.maximize_btn.setIcon(QIcon("Icons/browsers.png"))
+
+    # --- Data Loading Methods ---
+
+    def open_nifti_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open NIfTI File", "",
+                                                   "NIfTI Files (*.nii *.nii.gz);;All Files (*)")
+        if file_path:
+            try:
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, self.metadata = loader.load_nifti_data(
+                    file_path)
+                self.file_loaded = True
+
+                self.original_intensity_min = self.intensity_min
+                self.original_intensity_max = self.intensity_max
+                self.original_data = self.data.copy()
+                self.crop_bounds = None
+
+                # --- Pass data to child widgets ---
+                self.mpr_widget.set_data(self.data, self.affine, self.dims, self.intensity_min, self.intensity_max)
+                self.td_widget.set_data(self.data, self.affine)  # 3D widget may need data
+
+                QMessageBox.information(self, "Success", f"NIfTI file loaded successfully!\nDimensions: {self.dims}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load NIfTI file:\n{str(e)}")
+
+    def open_dicom_folder(self):
+        folder_path = QFileDialog.getExistingDirectory(self, "Select DICOM Folder", "", QFileDialog.ShowDirsOnly)
+        if folder_path:
+            try:
+                self.data, self.affine, self.dims, self.intensity_min, self.intensity_max, self.metadata = loader.load_dicom_data(
+                    folder_path)
+                self.file_loaded = True
+
+                self.original_intensity_min = self.intensity_min
+                self.original_intensity_max = self.intensity_max
+                self.original_data = self.data.copy()
+                self.crop_bounds = None
+
+                # --- Pass data to child widgets ---
+                self.mpr_widget.set_data(self.data, self.affine, self.dims, self.intensity_min, self.intensity_max)
+                self.td_widget.set_data(self.data, self.affine)  # 3D widget may need data
+
+                orientation, confidence, _ = od.predict_middle_dicom_from_folder(folder_path)
+                orientation_info = f"\n\nDetected Orientation: {orientation} with confidence: {(confidence * 100):.2f}%"
+                meta_info = f"Body Part Examined: {self.metadata.get('BodyPartExamined')}\nStudy Description: {self.metadata.get('StudyDescription')}"
+
+                QMessageBox.information(
+                    self, "Success",
+                    f"DICOM folder loaded successfully!\nDimensions: {self.dims}{orientation_info}\n\n{meta_info}"
+                )
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load DICOM folder:\n{str(e)}")
+
+    def load_segmentation_files(self):
+        """Opens a file dialog to select multiple NIfTI segmentation files."""
+        if not self.file_loaded:
+            QMessageBox.warning(self, "No Data", "Please load a main file first.")
+            return
+
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, "Select Segmentation Files", "", "NIfTI Files (*.nii *.nii.gz);;All Files (*)"
+        )
+        if not file_paths:
+            return
+
+        self.segmentation_files = []
+        self.segmentation_data_list = []
+        self.original_segmentation_data_list = []
+
+        for file_path in file_paths:
+            try:
+                nifti_file = nib.load(file_path)
+                seg_data = nifti_file.get_fdata()
+                seg_data = seg_data[::-1, :, :]  # Apply same flip as main data
+
+                if seg_data.shape != self.data.shape:
+                    QMessageBox.warning(
+                        self, "Dimension Mismatch",
+                        f"Segmentation file {os.path.basename(file_path)} has different dimensions.\n"
+                        f"Expected: {self.data.shape}, Got: {seg_data.shape}"
+                    )
+                    continue
+
+                self.segmentation_files.append(file_path)
+                self.segmentation_data_list.append(seg_data)
+                self.original_segmentation_data_list.append(seg_data.copy())  # Store original
+
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Error",
+                    f"Failed to load segmentation file {os.path.basename(file_path)}:\n{str(e)}"
+                )
+
+        if self.segmentation_data_list:
+            # Notify MPR widget to update
+            self.mpr_widget.set_segmentation_visibility(True)
+            self.mpr_widget.update_all_views()
+            QMessageBox.information(
+                self, "Success", f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
+            )
+
+    def delete_segmentation_files(self):
+        """Deletes all loaded segmentation files."""
+        if not self.segmentation_data_list:
+            QMessageBox.information(self, "No Segmentation", "No segmentation files are currently loaded.")
+            return
+
+        reply = QMessageBox.question(
+            self, "Delete Segmentation",
+            f"Are you sure you want to delete all {len(self.segmentation_data_list)} segmentation file(s)?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            self.segmentation_files = []
+            self.segmentation_data_list = []
+            self.original_segmentation_data_list = []
+
+            # Notify MPR widget to update
+            self.mpr_widget.set_segmentation_visibility(False)
+            self.mpr_widget.update_all_views()
+
+            QMessageBox.information(self, "Success", "All segmentation files have been deleted.")
+
+    # --- Data Manipulation Methods (Crop) ---
+
+    def show_slice_crop_dialog(self):
+        """Shows a dialog to get a slice range and applies the crop."""
+        if not self.file_loaded or self.original_data is None:
+            QMessageBox.warning(self, "No File", "Please load a file first.")
+            return
+
+        total_slices = self.original_data.shape[2]
+        dialog = SliceCropDialog(total_slices, self)
+
+        if dialog.exec_() == QDialog.Accepted:
+            start, end = dialog.get_values()
+            if start >= end:
+                QMessageBox.critical(self, "Input Error", "The 'from' slice must be smaller than the 'to' slice.")
+                return
+
+            start_idx = start - 1
+            end_idx = end - 1
+            self.apply_slice_crop(start_idx, end_idx)
+
+    def apply_slice_crop(self, start_idx, end_idx):
+        """Crops the data volume to the specified slice range (axial)."""
+        if self.original_data is None:
+            return
+
+        self.data = self.original_data[:, :, start_idx: end_idx + 1].copy()
+        self.dims = self.data.shape
+
+        # Also crop loaded segmentations
+        new_seg_list = []
+        for seg_data in self.original_segmentation_data_list:
+            new_seg_list.append(seg_data[:, :, start_idx: end_idx + 1].copy())
+        self.segmentation_data_list = new_seg_list
+
+        # Notify MPR widget of the data change
+        self.mpr_widget.update_data(self.data, self.dims, self.segmentation_data_list)
+
+        QMessageBox.information(self, "Crop Applied",
+                                f"Volume cropped to show slices {start_idx + 1} to {end_idx + 1}.\n"
+                                f"New dimensions: {self.dims}")
+
+    # --- Reset Logic Methods ---
+
+    def on_reset_clicked(self):
+        """Handler for the Reset button. Delegates to child widgets or self."""
+        if not self.file_loaded:
+            return
+
+        checked_btn = self.tools_group_buttons.checkedButton()
+        if not checked_btn:
+            # Handle non-checkable crop button
+            active_tool = self.tools_group_buttons.sender()
+            if active_tool and active_tool.objectName() == "tool_btn_1_0":
+                self.reset_crop()
+                self.mpr_widget.update_all_views()
+            return
+
+        btn_name = checked_btn.objectName()
+
+        if btn_name == "tool_btn_0_0":
+            self.mpr_widget.reset_crosshair_and_slices()
+        elif btn_name == "tool_btn_0_1":
+            self.reset_contrast()
+        elif btn_name == "tool_btn_0_2":
+            self.mpr_widget.reset_all_zooms()
+        elif btn_name == "tool_btn_1_0":
+            self.reset_crop()
+        elif btn_name == "tool_btn_1_1":
+            self.mpr_widget.reset_rotation()
+
+        self.mpr_widget.update_all_views()  # Update views after reset
+
+    def reset_contrast(self):
+        """Resets the window/level to the initial values from file load."""
+        self.intensity_min = self.original_intensity_min
+        self.intensity_max = self.original_intensity_max
+
+    def reset_crop(self):
+        """Resets the crop to show the full volume."""
+        if self.original_data is not None:
+            self.data = self.original_data.copy()
+            self.dims = self.data.shape
+            self.crop_bounds = None
+
+            self.segmentation_data_list = [seg.copy() for seg in self.original_segmentation_data_list]
+
+            # Notify MPR widget of data change
+            self.mpr_widget.update_data(self.data, self.dims, self.segmentation_data_list)
+
+    # --- Export Methods ---
+
     def toggle_export_button(self, button):
         if button.isChecked():
             button.setChecked(False)
@@ -1378,17 +648,10 @@ class MPRViewer(QMainWindow):
                 QMessageBox.warning(self, "No Data", "Please load a file first.")
                 return
 
-            if self.crop_bounds is not None:
-                reply = QMessageBox.question(
-                    self, "Apply Crop",
-                    "Do you want to apply the current crop before exporting?",
-                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
-                )
-
-                if reply == QMessageBox.Cancel:
-                    return
-                elif reply == QMessageBox.Yes:
-                    self.apply_crop()
+            # Note: The original code had a self.crop_bounds check
+            # but apply_crop() was not defined.
+            # This logic assumes self.data holds the (potentially cropped) data to be exported.
+            # If self.crop_bounds was used for a different cropping, that logic is missing.
 
             if button.objectName() == "export_btn_1":  # DICOM export
                 output_dir = QFileDialog.getExistingDirectory(
@@ -1414,142 +677,7 @@ class MPRViewer(QMainWindow):
                     else:
                         QMessageBox.warning(self, "Export Failed", "Failed to save NIfTI file.")
 
-    def create_viewing_area(self):
-        widget = QWidget()
-        self.viewing_grid = QGridLayout(widget)
-        self.viewing_grid.setSpacing(10)
-        self.viewing_grid.setContentsMargins(0, 0, 0, 0)
-
-        panels = [
-            ("Coronal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
-            ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
-            ("Segmentation", 'segmentation', 1, 1)
-        ]
-
-        for title, view_type, row, col in panels:
-            panel = QFrame()
-            panel.setObjectName(f"viewing_panel_{title.lower()}")
-            panel.setFrameStyle(QFrame.Box)
-            panel_layout = QVBoxLayout(panel)
-            panel_layout.setContentsMargins(5, 5, 5, 5)
-            panel_layout.setSpacing(5)
-
-            title_bar_widget = QWidget()
-            title_bar_layout = QHBoxLayout(title_bar_widget)
-            title_bar_layout.setContentsMargins(0, 0, 0, 0)
-            title_bar_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-            color_key = view_type
-            if title.lower() == 'coronal':
-                color_key = 'coronal'
-
-            if color_key in self.view_colors:
-                color_indicator = QLabel()
-                color_indicator.setFixedSize(12, 12)
-                color = self.view_colors[color_key]
-                color_indicator.setStyleSheet(f"""
-                    background-color: {color.name()};
-                    border-radius: 6px;
-                    border: 1px solid #E2E8F0;
-                """)
-                title_bar_layout.addWidget(color_indicator)
-
-            title_lbl = QLabel(title)
-            title_lbl.setObjectName(f"view_title_{title.lower()}")
-            title_bar_layout.addWidget(title_lbl)
-
-            # Add dropdown for segmentation view
-            if title.lower() == 'segmentation':
-                title_bar_layout.addStretch()
-                
-                self.segmentation_view_selector = QComboBox()
-                self.segmentation_view_selector.setObjectName("segmentation_view_dropdown")
-                self.segmentation_view_selector.addItems(["Axial", "Coronal", "Sagittal"])
-                self.segmentation_view_selector.setCurrentText("Axial")
-                self.segmentation_view_selector.setFixedWidth(100)
-                self.segmentation_view_selector.currentTextChanged.connect(self.on_segmentation_view_changed)
-                title_bar_layout.addWidget(self.segmentation_view_selector)
-
-            panel_layout.addWidget(title_bar_widget)
-
-            if view_type != 'segmentation':
-                view_area = SliceViewLabel(self, view_type, title)
-            else:
-                view_area = QLabel()
-                view_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                view_area.setScaledContents(False)
-                view_area.setObjectName(f"view_{title.lower()}")
-                view_area.setAlignment(Qt.AlignCenter)
-                view_area.setText("")
-
-            panel_layout.addWidget(view_area, stretch=1)
-
-            self.view_panels[title.lower()] = panel
-            self.view_labels[title.lower()] = view_area
-            self.viewing_grid.addWidget(panel, row, col)
-
-        self.viewing_grid.setRowStretch(0, 1)
-        self.viewing_grid.setRowStretch(1, 1)
-        self.viewing_grid.setColumnStretch(0, 1)
-        self.viewing_grid.setColumnStretch(1, 1)
-
-        return widget
-    
-    def create_3d_view(self):
-        """Create the 3D view area"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setSpacing(10)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Create a single panel for 3D view
-        panel = QFrame()
-        panel.setObjectName("viewing_panel_3d")
-        panel.setFrameStyle(QFrame.Box)
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(5, 5, 5, 5)
-        panel_layout.setSpacing(5)
-        
-        # Title bar
-        title_bar_widget = QWidget()
-        title_bar_layout = QHBoxLayout(title_bar_widget)
-        title_bar_layout.setContentsMargins(0, 0, 0, 0)
-        title_bar_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        
-        # Color indicator for 3D view (use yellow like oblique)
-        color_indicator = QLabel()
-        color_indicator.setFixedSize(12, 12)
-        color_indicator.setStyleSheet(f"""
-            background-color: #FFFF64;
-            border-radius: 6px;
-            border: 1px solid #E2E8F0;
-        """)
-        title_bar_layout.addWidget(color_indicator)
-        
-        title_lbl = QLabel("3D View")
-        title_lbl.setObjectName("view_title_3d")
-        title_bar_layout.addWidget(title_lbl)
-        
-        panel_layout.addWidget(title_bar_widget)
-        
-        # 3D view area (placeholder for now)
-        view_area = QLabel()
-        view_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        view_area.setScaledContents(False)
-        view_area.setObjectName("view_3d")
-        view_area.setAlignment(Qt.AlignCenter)
-        view_area.setText("3D View\n\n[3D visualization will be displayed here]")
-        view_area.setStyleSheet("""
-            background-color: black;
-            color: #4A5568;
-            font-size: 18px;
-        """)
-        
-        panel_layout.addWidget(view_area, stretch=1)
-        layout.addWidget(panel)
-        
-        widget.hide()  # Initially hidden
-        return widget
+    # --- Utility Methods ---
 
     def add_image_to_button(self, name, img, tip=None):
         button = self.findChild(QPushButton, name)
