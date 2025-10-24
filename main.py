@@ -7,15 +7,13 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QFrame, QGroupBox, QSizePolicy, QButtonGroup, QFileDialog, QMessageBox,
-    QDialog
+    QDialog, QComboBox, QMenuBar, QAction
 )
-from PyQt5.QtWidgets import QComboBox
 from PyQt5.QtCore import Qt, QSize, QEvent, QTimer, QPoint
 from PyQt5.QtGui import QPixmap, QIcon, QImage, QColor
 import utils.loader as loader
 import utils.detect_orientation as od
 from utils.ui_classes import SliceViewLabel, SliceCropDialog
-
 
 class MPRViewer(QMainWindow):
     def __init__(self, file_path=None):
@@ -100,7 +98,10 @@ class MPRViewer(QMainWindow):
         # Create custom title bar
         title_bar = self.create_title_bar()
         container_layout.addWidget(title_bar)
+       
+    
 
+             
         # Create content widget
         content_widget = QWidget()
         main_layout = QHBoxLayout(content_widget)
@@ -190,12 +191,21 @@ class MPRViewer(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Title label
+      # Title label
         title_label = QLabel("SBME29 MPR")
         title_label.setObjectName("title_label")
         layout.addWidget(title_label)
 
+        # Add Import button next to title
+        import_btn = QPushButton("Import")
+        import_btn.setObjectName("title_import_btn")
+        import_btn.setFixedHeight(25)
+        import_btn.clicked.connect(self.show_import_menu)
+        layout.addWidget(import_btn)
+
         layout.addStretch()
+
+        
 
         # Minimize button
         minimize_btn = QPushButton()
@@ -1080,6 +1090,37 @@ class MPRViewer(QMainWindow):
 
         self.update_visible_views()
 
+  # def create_sidebar(self):
+        #sidebar = QFrame()
+        #sidebar.setObjectName("sidebar")
+        #sidebar.setFrameStyle(QFrame.Box)
+        #sidebar.setFixedWidth(200)
+
+        #layout = QVBoxLayout(sidebar)
+        #layout.setSpacing(20)
+        #layout.setContentsMargins(10, 10, 10, 10)
+
+ 
+ 
+ # def create_menu_bar(self):
+#     """Create menu bar with Import menu"""
+#     menubar = QMenuBar()
+#     
+#     # Create Import menu
+#     import_menu = menubar.addMenu("Import")
+#     
+#     # Add Open DICOM action
+#     open_dicom_action = QAction("Open DICOM", self)
+#     open_dicom_action.triggered.connect(self.open_dicom_folder)
+#     import_menu.addAction(open_dicom_action)
+#     
+#     # Add Open NIfTI action
+#     open_nifti_action = QAction("Open NIfTI", self)
+#     open_nifti_action.triggered.connect(self.open_nifti_file)
+#     import_menu.addAction(open_nifti_action)
+#     
+#     return menubar
+
     def create_sidebar(self):
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
@@ -1090,24 +1131,15 @@ class MPRViewer(QMainWindow):
         layout.setSpacing(20)
         layout.setContentsMargins(10, 10, 10, 10)
 
-        file_group = QGroupBox("Load File:")
-        file_layout = QVBoxLayout()
+        # ADD IMPORT BUTTON HERE
+        #import_btn = QPushButton("Import")
+        #import_btn.setObjectName("import_btn")
+        #import_btn.setMinimumHeight(40)
+        #import_btn.setToolTip("Import DICOM or NIfTI files")
+        #import_btn.clicked.connect(self.show_import_menu)
+        #layout.addWidget(import_btn)
 
-        open_nifti_btn = QPushButton("Open NIfTI File")
-        open_nifti_btn.setObjectName("open_btn_nifti")
-        open_nifti_btn.setMinimumHeight(35)
-        open_nifti_btn.clicked.connect(self.open_nifti_file)
-        file_layout.addWidget(open_nifti_btn)
-
-        open_dicom_btn = QPushButton("Open DICOM Folder")
-        open_dicom_btn.setObjectName("open_btn_dicom")
-        open_dicom_btn.setMinimumHeight(35)
-        open_dicom_btn.clicked.connect(self.open_dicom_folder)
-        file_layout.addWidget(open_dicom_btn)
-
-        file_group.setLayout(file_layout)
-        layout.addWidget(file_group)
-
+        # Mode section
         mode_group = QGroupBox("Mode:")
         mode_layout = QVBoxLayout()
         mode_buttons_widget = QWidget()
@@ -1207,6 +1239,24 @@ class MPRViewer(QMainWindow):
         layout.addStretch()
         return sidebar
 
+    def show_import_menu(self):
+        """Show import options menu"""
+        from PyQt5.QtWidgets import QMenu
+        
+        menu = QMenu(self)
+        
+        open_dicom = menu.addAction("Open DICOM")
+        open_dicom.triggered.connect(self.open_dicom_folder)
+        
+        open_nifti = menu.addAction("Open NIfTI")
+        open_nifti.triggered.connect(self.open_nifti_file)
+        
+        # Show menu at the import button
+        import_btn = self.sender()
+        menu.exec_(import_btn.mapToGlobal(import_btn.rect().bottomLeft()))
+
+
+    
     def toggle_export_button(self, button):
         if button.isChecked():
             button.setChecked(False)
