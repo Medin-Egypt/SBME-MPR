@@ -75,6 +75,9 @@ class MPRViewer(QMainWindow):
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
+        # 3D view modes
+        self.surface_mode_enabled = False
+        self.planes_mode_enabled = False
 
         # Track window dragging
         self.drag_position = None
@@ -121,9 +124,11 @@ class MPRViewer(QMainWindow):
 
         container_layout.addWidget(content_widget)
 
-        self.add_image_to_button("mode_btn_0", "Icons/windows.png", "3 Main Views")
-        self.add_image_to_button("mode_btn_1", "Icons/heart.png", "Segmentation View")
-        self.add_image_to_button("mode_btn_2", "Icons/diagram.png", "Oblique View")
+        self.add_image_to_button("mpr_mode_btn_0", "Icons/windows.png", "3 Main Views")
+        self.add_image_to_button("mpr_mode_btn_1", "Icons/heart.png", "Segmentation View")
+        self.add_image_to_button("mpr_mode_btn_2", "Icons/diagram.png", "Oblique View")
+        self.add_image_to_button("td_mode_btn_0", "Icons/surface.png", "Surface Mode")
+        self.add_image_to_button("td_mode_btn_1", "Icons/Planes.png", "Planes Mode")
         self.add_image_to_button("tool_btn_0_0", "Icons/mouse.png", "Navigation")
         self.add_image_to_button("tool_btn_0_1", "Icons/brightness.png", "Contrast")
         self.add_image_to_button("tool_btn_0_2", "Icons/loupe.png", "Zoom/Pan")
@@ -133,7 +138,7 @@ class MPRViewer(QMainWindow):
         self.add_image_to_button("export_btn_0", "Icons/NII.png", "NIFTI Export")
         self.add_image_to_button("export_btn_1", "Icons/DIC.png", "DICOM Export")
 
-        main_views_btn = self.findChild(QPushButton, "mode_btn_0")
+        main_views_btn = self.findChild(QPushButton, "mpr_mode_btn_0")
         if main_views_btn:
             main_views_btn.setChecked(True)
 
@@ -295,10 +300,16 @@ class MPRViewer(QMainWindow):
             # Show MPR view, hide 3D view
             self.viewing_area_widget.show()
             self.td_view_widget.hide()
+            # Show MPR mode buttons, hide 3D mode buttons
+            self.mpr_mode_group.show()
+            self.td_mode_group.hide()
         elif tab_name == "3d":
             # Hide MPR view, show 3D view
             self.viewing_area_widget.hide()
             self.td_view_widget.show()
+            # Hide MPR mode buttons, show 3D mode buttons
+            self.mpr_mode_group.hide()
+            self.td_mode_group.show()
 
     
     def title_bar_mouse_press(self, event):
@@ -1087,8 +1098,8 @@ class MPRViewer(QMainWindow):
         self.segmentation_view_enabled = False
         self.segmentation_visible = True if self.segmentation_data_list else False
 
-        self.findChild(QPushButton, "mode_btn_2").setChecked(False)
-        self.findChild(QPushButton, "mode_btn_1").setChecked(False)
+        self.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
+        self.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['coronal', 'sagittal', 'axial']:
@@ -1101,7 +1112,7 @@ class MPRViewer(QMainWindow):
     def toggle_oblique_view(self, checked):
         if not checked and self.oblique_view_enabled:
             self.toggle_main_views(True)
-            self.findChild(QPushButton, "mode_btn_0").setChecked(True)
+            self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(True)
             return
 
         self.restore_views()
@@ -1113,8 +1124,8 @@ class MPRViewer(QMainWindow):
         # Always show oblique axis in oblique view mode
         self.oblique_axis_visible = True
 
-        self.findChild(QPushButton, "mode_btn_0").setChecked(False)
-        self.findChild(QPushButton, "mode_btn_1").setChecked(False)
+        self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
+        self.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['coronal', 'sagittal', 'axial', 'oblique']:
@@ -1130,7 +1141,7 @@ class MPRViewer(QMainWindow):
     def toggle_segmentation_view(self, checked):
         if not checked and self.segmentation_view_enabled:
             self.toggle_main_views(True)
-            self.findChild(QPushButton, "mode_btn_0").setChecked(True)
+            self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(True)
             return
 
         self.restore_views()
@@ -1138,8 +1149,8 @@ class MPRViewer(QMainWindow):
         self.main_views_enabled = False
         self.oblique_view_enabled = False
 
-        self.findChild(QPushButton, "mode_btn_0").setChecked(False)
-        self.findChild(QPushButton, "mode_btn_2").setChecked(False)
+        self.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
+        self.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['coronal', 'sagittal', 'axial', 'segmentation']:
@@ -1152,6 +1163,22 @@ class MPRViewer(QMainWindow):
                 panel.hide()
 
         self.update_visible_views()
+
+    def toggle_surface_mode(self, checked):
+        """Toggle surface rendering mode in 3D view"""
+        if checked:
+            self.surface_mode_enabled = True
+            self.planes_mode_enabled = False
+            # Add your surface mode logic here
+            print("Surface mode activated")
+
+    def toggle_planes_mode(self, checked):
+        """Toggle planes mode in 3D view"""
+        if checked:
+            self.planes_mode_enabled = True
+            self.surface_mode_enabled = False
+            # Add your planes mode logic here
+            print("Planes mode activated")
 
   # def create_sidebar(self):
         #sidebar = QFrame()
@@ -1168,7 +1195,6 @@ class MPRViewer(QMainWindow):
  # def create_menu_bar(self):
 #     """Create menu bar with Import menu"""
 #     menubar = QMenuBar()
-#     
 #     # Create Import menu
 #     import_menu = menubar.addMenu("Import")
 #     
@@ -1202,20 +1228,20 @@ class MPRViewer(QMainWindow):
         #import_btn.clicked.connect(self.show_import_menu)
         #layout.addWidget(import_btn)
 
-        # Mode section
-        mode_group = QGroupBox("Mode:")
-        mode_layout = QVBoxLayout()
-        mode_buttons_widget = QWidget()
-        mode_buttons_layout = QGridLayout(mode_buttons_widget)
-        self.mode_group_buttons = QButtonGroup(self)
-        self.mode_group_buttons.setExclusive(False)
+        # MPR Mode section (only visible in MPR tab)
+        self.mpr_mode_group = QGroupBox("Mode:")
+        mpr_mode_layout = QVBoxLayout()
+        mpr_mode_buttons_widget = QWidget()
+        mpr_mode_buttons_layout = QGridLayout(mpr_mode_buttons_widget)
+        self.mpr_mode_group_buttons = QButtonGroup(self)
+        self.mpr_mode_group_buttons.setExclusive(False)
         for i in range(3):
             btn = QPushButton()
             btn.setFixedSize(40, 40)
-            btn.setObjectName(f"mode_btn_{i}")
+            btn.setObjectName(f"mpr_mode_btn_{i}")
             btn.setCheckable(True)
-            mode_buttons_layout.addWidget(btn, 0, i)
-            self.mode_group_buttons.addButton(btn, i)
+            mpr_mode_buttons_layout.addWidget(btn, 0, i)
+            self.mpr_mode_group_buttons.addButton(btn, i)
             if i == 0:
                 btn.clicked.connect(self.toggle_main_views)
             elif i == 1:
@@ -1223,9 +1249,33 @@ class MPRViewer(QMainWindow):
             elif i == 2:
                 btn.clicked.connect(self.toggle_oblique_view)
 
-        mode_layout.addWidget(mode_buttons_widget)
-        mode_group.setLayout(mode_layout)
-        layout.addWidget(mode_group)
+        mpr_mode_layout.addWidget(mpr_mode_buttons_widget)
+        self.mpr_mode_group.setLayout(mpr_mode_layout)
+        layout.addWidget(self.mpr_mode_group)
+
+        # 3D Mode section (only visible in 3D tab)
+        self.td_mode_group = QGroupBox("3D Mode:")
+        td_mode_layout = QVBoxLayout()
+        td_mode_buttons_widget = QWidget()
+        td_mode_buttons_layout = QGridLayout(td_mode_buttons_widget)
+        self.td_mode_group_buttons = QButtonGroup(self)
+        self.td_mode_group_buttons.setExclusive(True)
+        for i in range(2):
+            btn = QPushButton()
+            btn.setFixedSize(40, 40)
+            btn.setObjectName(f"td_mode_btn_{i}")
+            btn.setCheckable(True)
+            td_mode_buttons_layout.addWidget(btn, 0, i)
+            self.td_mode_group_buttons.addButton(btn, i)
+            if i == 0:
+                btn.clicked.connect(self.toggle_surface_mode)
+            elif i == 1:
+                btn.clicked.connect(self.toggle_planes_mode)
+
+        td_mode_layout.addWidget(td_mode_buttons_widget)
+        self.td_mode_group.setLayout(td_mode_layout)
+        layout.addWidget(self.td_mode_group)
+        self.td_mode_group.hide()  # Initially hidden
 
         # Add Segmentation section
         seg_group = QGroupBox("Segmentation:")
