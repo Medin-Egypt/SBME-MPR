@@ -112,6 +112,19 @@ QPushButton:checked {
     color: #1A202C;
 }
 
+/* --- Import Button Styling --- */
+QPushButton[objectName="import_btn"] {
+    background-color: #2D3748;
+    border: 1px solid #63B3ED;
+    color: #63B3ED;
+}
+
+QPushButton[objectName="import_btn"]:hover {
+    background-color: #63B3ED;
+    color: #1A202C;
+    border: 1px solid #63B3ED;
+}
+
 /* --- Specific Button Styling (Load/Export/Reset/Segmentation) --- */
 QPushButton[objectName^="open_btn_"],
 QPushButton[objectName="load_seg_btn"],

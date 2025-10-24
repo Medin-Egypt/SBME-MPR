@@ -101,7 +101,6 @@ class MPRViewer(QMainWindow):
        
     
 
-             
         # Create content widget
         content_widget = QWidget()
         main_layout = QHBoxLayout(content_widget)
@@ -110,12 +109,15 @@ class MPRViewer(QMainWindow):
 
         sidebar = self.create_sidebar()
         self.viewing_area_widget = self.create_viewing_area()
+        self.td_view_widget = self.create_3d_view()
 
         main_layout.addWidget(sidebar)
         # Fix: Duplicate addition of sidebar and viewing_area_widget removed
         main_layout.addWidget(self.viewing_area_widget)
+        main_layout.addWidget(self.td_view_widget)
         main_layout.setStretch(0, 0)
         main_layout.setStretch(1, 1)
+        main_layout.setStretch(2, 1)
 
         container_layout.addWidget(content_widget)
 
@@ -204,13 +206,17 @@ class MPRViewer(QMainWindow):
         title_label = QLabel("SBME29 MPR")
         title_label.setObjectName("title_label")
         layout.addWidget(title_label)
+        layout.addSpacing(10)  
+
 
         # Add Import button next to title
         import_btn = QPushButton("Import")
-        import_btn.setObjectName("title_import_btn")
-        import_btn.setFixedHeight(25)
+        import_btn.setObjectName("import_btn")
+        import_btn.setFixedHeight(30)
         import_btn.clicked.connect(self.show_import_menu)
         layout.addWidget(import_btn)
+        layout.addSpacing(10)  
+
 
         layout.addStretch()
 
@@ -254,6 +260,10 @@ class MPRViewer(QMainWindow):
         tab_layout.setContentsMargins(10, 0, 0, 0)
         tab_layout.setSpacing(5)
         
+        # Create button group for tabs to make them mutually exclusive
+        self.tab_button_group = QButtonGroup(self)
+        self.tab_button_group.setExclusive(True)
+
         # MPR tab
         mpr_tab = QPushButton("MPR")
         mpr_tab.setObjectName("mpr_tab")
@@ -261,37 +271,34 @@ class MPRViewer(QMainWindow):
         mpr_tab.setChecked(True)
         mpr_tab.setFixedSize(80, 30)
         tab_layout.addWidget(mpr_tab)
-        
+        self.tab_button_group.addButton(mpr_tab)
+
         # 3D tab
         td_tab = QPushButton("3D")
         td_tab.setObjectName("td_tab")
         td_tab.setCheckable(True)
         td_tab.setFixedSize(80, 30)
         tab_layout.addWidget(td_tab)
-        
+        self.tab_button_group.addButton(td_tab)
+
         tab_layout.addStretch()
-        
+        # Connect tab buttons to switch function
+        mpr_tab.clicked.connect(lambda: self.switch_to_tab("mpr"))
+        td_tab.clicked.connect(lambda: self.switch_to_tab("3d"))
         container_layout.addWidget(tab_bar)
         
         return title_bar_container
 
     def switch_to_tab(self, tab_name):
         """Switch between MPR and 3D tabs"""
-        mpr_tab = self.findChild(QPushButton, "mpr_tab")
-        td_tab = self.findChild(QPushButton, "td_tab")
-        
         if tab_name == "mpr":
-            mpr_tab.setChecked(True)
-            td_tab.setChecked(False)
-            # Show MPR view
+            # Show MPR view, hide 3D view
             self.viewing_area_widget.show()
-            # Hide 3D view if you have one
+            self.td_view_widget.hide()
         elif tab_name == "3d":
-            mpr_tab.setChecked(False)
-            td_tab.setChecked(True)
-            # Hide MPR view
-            # Show 3D view
-            QMessageBox.information(self, "3D View", "3D view not yet implemented")
+            # Hide MPR view, show 3D view
+            self.viewing_area_widget.hide()
+            self.td_view_widget.show()
 
     
     def title_bar_mouse_press(self, event):
@@ -1436,6 +1443,62 @@ class MPRViewer(QMainWindow):
         self.viewing_grid.setColumnStretch(0, 1)
         self.viewing_grid.setColumnStretch(1, 1)
 
+        return widget
+    
+    def create_3d_view(self):
+        """Create the 3D view area"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create a single panel for 3D view
+        panel = QFrame()
+        panel.setObjectName("viewing_panel_3d")
+        panel.setFrameStyle(QFrame.Box)
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(5, 5, 5, 5)
+        panel_layout.setSpacing(5)
+        
+        # Title bar
+        title_bar_widget = QWidget()
+        title_bar_layout = QHBoxLayout(title_bar_widget)
+        title_bar_layout.setContentsMargins(0, 0, 0, 0)
+        title_bar_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        
+        # Color indicator for 3D view (use yellow like oblique)
+        color_indicator = QLabel()
+        color_indicator.setFixedSize(12, 12)
+        color_indicator.setStyleSheet(f"""
+            background-color: #FFFF64;
+            border-radius: 6px;
+            border: 1px solid #E2E8F0;
+        """)
+        title_bar_layout.addWidget(color_indicator)
+        
+        title_lbl = QLabel("3D View")
+        title_lbl.setObjectName("view_title_3d")
+        title_bar_layout.addWidget(title_lbl)
+        
+        panel_layout.addWidget(title_bar_widget)
+        
+        # 3D view area (placeholder for now)
+        view_area = QLabel()
+        view_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        view_area.setScaledContents(False)
+        view_area.setObjectName("view_3d")
+        view_area.setAlignment(Qt.AlignCenter)
+        view_area.setText("3D View\n\n[3D visualization will be displayed here]")
+        view_area.setStyleSheet("""
+            background-color: black;
+            color: #4A5568;
+            font-size: 18px;
+        """)
+        
+        panel_layout.addWidget(view_area, stretch=1)
+        layout.addWidget(panel)
+        
+        widget.hide()  # Initially hidden
         return widget
 
     def add_image_to_button(self, name, img, tip=None):
