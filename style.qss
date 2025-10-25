@@ -86,6 +86,137 @@ QGroupBox::title {
     font-size: 16px;
 }
 
+/* --- 3D Viewer Controls Panel Styling --- */
+/* Style for the controls container in SegmentationViewer3D */
+QWidget[objectName="controls_container_3d"] {
+    background-color: #1A202C;
+    border: 1px solid #2D3748;
+    border-radius: 8px;
+}
+
+/* System control group boxes in 3D viewer */
+QWidget[objectName="controls_container_3d"] QGroupBox {
+    font-weight: bold;
+    border: 2px solid #4A5568;
+    border-radius: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    background-color: #2D3748;
+    color: #E2E8F0;
+}
+
+QWidget[objectName="controls_container_3d"] QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+    color: #63B3ED;
+    font-size: 14px;
+}
+
+/* Checkboxes in 3D viewer */
+QWidget[objectName="controls_container_3d"] QCheckBox {
+    color: #63B3ED;
+    spacing: 5px;
+    font-weight: bold;
+}
+
+QWidget[objectName="controls_container_3d"] QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #4A5568;
+    border-radius: 3px;
+    background-color: #2D3748;
+}
+
+QWidget[objectName="controls_container_3d"] QCheckBox::indicator:checked {
+    background-color: #63B3ED;
+    border-color: #63B3ED;
+}
+
+QWidget[objectName="controls_container_3d"] QCheckBox::indicator:hover {
+    border-color: #63B3ED;
+}
+
+/* Labels in 3D viewer */
+QWidget[objectName="controls_container_3d"] QLabel {
+    color: #63B3ED;
+    background-color: transparent;
+}
+
+/* Title label */
+QLabel[objectName="anatomical_systems_title"] {
+    font-size: 14px;
+    font-weight: bold;
+    color: #63B3ED;
+    background-color: transparent;
+}
+
+/* Modern Slider Style (Style 2) for 3D Controls */
+QWidget[objectName="controls_container_3d"] QSlider::groove:horizontal {
+    border: 1px solid #2D3748;
+    height: 6px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #2D3748, stop:1 #4A5568);
+    border-radius: 3px;
+}
+
+QWidget[objectName="controls_container_3d"] QSlider::handle:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 #63B3ED, stop:1 #3182CE);
+    border: 2px solid #2D3748;
+    width: 20px;
+    margin: -7px 0;
+    border-radius: 10px;
+}
+
+QWidget[objectName="controls_container_3d"] QSlider::handle:horizontal:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 #7EC8F5, stop:1 #63B3ED);
+    border: 2px solid #63B3ED;
+}
+
+QWidget[objectName="controls_container_3d"] QSlider::handle:horizontal:pressed {
+    background: #3182CE;
+}
+
+QWidget[objectName="controls_container_3d"] QSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #63B3ED, stop:1 #4299E1);
+    border-radius: 3px;
+}
+
+QWidget[objectName="controls_container_3d"] QSlider::add-page:horizontal {
+    background: #2D3748;
+    border-radius: 3px;
+}
+
+/* Scroll area in 3D controls */
+QWidget[objectName="controls_container_3d"] QScrollArea {
+    border: none;
+    background-color: #1A202C;
+}
+
+/* Reset View button styling */
+QWidget[objectName="controls_container_3d"] QPushButton {
+    background-color: #2D3748;
+    border: 1px solid #63B3ED;
+    color: #63B3ED;
+    border-radius: 5px;
+    padding: 8px;
+    font-weight: bold;
+    min-height: 35px;
+}
+
+QWidget[objectName="controls_container_3d"] QPushButton:hover {
+    background-color: #63B3ED;
+    color: #1A202C;
+    border: 1px solid #63B3ED;
+}
+
+QWidget[objectName="controls_container_3d"] QPushButton:pressed {
+    background-color: #3182CE;
+}
+
 /* --- Push Button Styling (General) --- */
 QPushButton {
     background-color: #4A5568;

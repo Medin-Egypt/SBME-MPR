@@ -200,27 +200,18 @@ class SegmentationViewer3D(QWidget):
     def create_controls_panel(self):
         """Create scrollable controls panel for system toggles and opacity"""
         controls_container = QWidget()
-        controls_container.setStyleSheet("background-color: #1a1a1a;")  # Dark background
+        controls_container.setObjectName("controls_container_3d")
         controls_layout = QVBoxLayout(controls_container)
         controls_layout.setContentsMargins(10, 10, 10, 10)
 
         # Title
         title_label = QLabel("Anatomical Systems")
-        title_label.setStyleSheet("font-size: 14px; font-weight: bold; color: white;")
+        title_label.setObjectName("anatomical_systems_title")
         controls_layout.addWidget(title_label)
 
         # Scroll area for systems
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: #1a1a1a;
-            }
-            QWidget {
-                background-color: #1a1a1a;
-            }
-        """)
 
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
@@ -237,19 +228,6 @@ class SegmentationViewer3D(QWidget):
 
         # Reset all button
         reset_btn = QPushButton("Reset View")
-        reset_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4a5568;
-                color: white;
-                border: none;
-                padding: 8px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #5a6578;
-            }
-        """)
         reset_btn.clicked.connect(self.reset_camera)
         controls_layout.addWidget(reset_btn)
 
@@ -258,28 +236,11 @@ class SegmentationViewer3D(QWidget):
     def create_system_control(self, system_name):
         """Create checkbox and opacity slider for a system"""
         group = QGroupBox(system_name)
-        group.setStyleSheet("""
-            QGroupBox {
-                color: white;
-                border: 1px solid #4a5568;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-                background-color: #2d2d2d;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-
         layout = QVBoxLayout()
 
         # Visibility checkbox
-        checkbox = QCheckBox("Visible")
+        checkbox = QCheckBox("Visiblity")
         checkbox.setChecked(True)
-        checkbox.setStyleSheet("color: white;")
         checkbox.stateChanged.connect(lambda state: self.toggle_system(system_name, state == Qt.Checked))
         self.system_checkboxes[system_name] = checkbox
         layout.addWidget(checkbox)
@@ -287,34 +248,17 @@ class SegmentationViewer3D(QWidget):
         # Opacity slider
         opacity_layout = QHBoxLayout()
         opacity_label = QLabel("Opacity:")
-        opacity_label.setStyleSheet("color: white;")
         opacity_layout.addWidget(opacity_label)
 
         slider = QSlider(Qt.Horizontal)
         slider.setMinimum(0)
         slider.setMaximum(100)
         slider.setValue(100)
-        slider.setStyleSheet("""
-            QSlider::groove:horizontal {
-                border: 1px solid #4a5568;
-                height: 8px;
-                background: #1a1a1a;
-                border-radius: 4px;
-            }
-            QSlider::handle:horizontal {
-                background: #4299e1;
-                border: 1px solid #3182ce;
-                width: 18px;
-                margin: -5px 0;
-                border-radius: 9px;
-            }
-        """)
         slider.valueChanged.connect(lambda value: self.set_system_opacity(system_name, value / 100.0))
         self.system_sliders[system_name] = slider
         opacity_layout.addWidget(slider)
 
         opacity_value_label = QLabel("100%")
-        opacity_value_label.setStyleSheet("color: white; min-width: 40px;")
         slider.valueChanged.connect(lambda value: opacity_value_label.setText(f"{value}%"))
         opacity_layout.addWidget(opacity_value_label)
 
