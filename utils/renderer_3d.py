@@ -6,6 +6,7 @@ from pathlib import Path
 from skimage import measure
 import json
 import gc
+from .segmentation_cache import SegmentationCache
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton, QProgressDialog
@@ -197,12 +198,13 @@ class MeshLoadWorker(QThread):
     finished = pyqtSignal()
     error = pyqtSignal(str, str)  # (filename, error_message)
 
-    def __init__(self, files_to_load, colormap, system_opacities, seg_manager=None):
+    def __init__(self, files_to_load, colormap, system_opacities, seg_manager=None, cache=None):
         super().__init__()
         self.files_to_load = files_to_load  # List of (system_name, filepath) tuples
         self.colormap = colormap
         self.system_opacities = system_opacities
         self.seg_manager = seg_manager  # Optional: for building merged volume
+        self.cache = cache  # Optional: SegmentationCache instance
         self._cancelled = False
 
     def cancel(self):
@@ -212,12 +214,29 @@ class MeshLoadWorker(QThread):
     def run(self):
         """
         Load files once and use for both merged volume and 3D meshes.
-        Much more efficient than loading twice!
+        Uses cache when available for massive speed improvement!
         """
         total = len(self.files_to_load)
 
-        # Initialize merged volume if seg_manager provided
-        if self.seg_manager is not None and total > 0:
+        # Get list of all file paths for cache key
+        all_file_paths = [fp for _, fp in self.files_to_load] if self.cache else []
+
+        # Try to load merged volume from cache
+        merged_from_cache = False
+        if self.seg_manager is not None and self.cache is not None and total > 0:
+            cached_merged = self.cache.load_merged_volume(all_file_paths)
+            if cached_merged is not None:
+                self.seg_manager.merged_volume = cached_merged
+                merged_from_cache = True
+                print("✓ Using cached merged volume")
+                self.merged_volume_ready.emit()
+
+                if self._cancelled:
+                    self.finished.emit()
+                    return
+
+        # Initialize merged volume if not cached
+        if self.seg_manager is not None and not merged_from_cache and total > 0:
             # Get shape from first file
             first_file = self.files_to_load[0][1]
             try:
@@ -237,14 +256,36 @@ class MeshLoadWorker(QThread):
             filename = nifti_file.stem
             self.progress.emit(f"Loading {filename}...", idx, total)
 
+            # Try to load mesh from cache first
+            cached_mesh = None
+            if self.cache is not None:
+                cached_mesh = self.cache.load_mesh(all_file_paths, filename)
+
+            if cached_mesh is not None:
+                # Use cached mesh
+                try:
+                    # Find color
+                    color = [0.5, 0.5, 0.5]  # Default grey
+                    for key, rgb in self.colormap.items():
+                        if key.lower() in filename.lower():
+                            color = rgb
+                            break
+
+                    # Emit cached mesh
+                    self.mesh_loaded.emit(filename, cached_mesh, color, system_name)
+                except Exception as e:
+                    print(f"  Error loading cached mesh {filename}: {e}")
+                continue  # Skip to next file
+
+            # Not cached, need to process
             try:
                 # Load NIfTI file ONCE
                 nii = nib.load(str(nifti_file))
                 data = nii.get_fdata(dtype=np.float32)
                 affine = nii.affine
 
-                # Step 1: Add to merged volume for 2D (if seg_manager provided)
-                if self.seg_manager is not None:
+                # Step 1: Add to merged volume for 2D (if seg_manager provided and not cached)
+                if self.seg_manager is not None and not merged_from_cache:
                     try:
                         # Apply flip to match main data
                         data_flipped = data[::-1, :, :]
@@ -312,6 +353,10 @@ class MeshLoadWorker(QThread):
                             color = rgb
                             break
 
+                    # Save mesh to cache
+                    if self.cache is not None:
+                        self.cache.save_mesh(all_file_paths, filename, mesh)
+
                     # Emit mesh loaded signal
                     self.mesh_loaded.emit(filename, mesh, color, system_name)
 
@@ -324,9 +369,13 @@ class MeshLoadWorker(QThread):
                 import traceback
                 traceback.print_exc()
 
-        # Emit merged volume ready signal after all files processed
+        # Save merged volume to cache and emit signal
         if self.seg_manager is not None and not self._cancelled:
-            print(f"Merged volume complete: {np.count_nonzero(self.seg_manager.merged_volume)} non-zero voxels")
+            if not merged_from_cache:
+                print(f"Merged volume complete: {np.count_nonzero(self.seg_manager.merged_volume)} non-zero voxels")
+                # Save to cache
+                if self.cache is not None:
+                    self.cache.save_merged_volume(all_file_paths, self.seg_manager.merged_volume)
             self.merged_volume_ready.emit()
 
         self.finished.emit()
@@ -375,6 +424,9 @@ class SegmentationViewer3D(QWidget):
         # Background loading
         self.load_worker = None
         self.load_progress_dialog = None
+
+        # Caching
+        self.cache = SegmentationCache()
 
         # UI components
         self.system_checkboxes = {}
@@ -880,12 +932,13 @@ class SegmentationViewer3D(QWidget):
             self.load_progress_dialog.setMinimumDuration(0)
             self.load_progress_dialog.setValue(0)
 
-            # Create and start worker thread with seg_manager
+            # Create and start worker thread with seg_manager and cache
             self.load_worker = MeshLoadWorker(
                 files_to_load,
                 self.colormap,
                 self.system_opacity,
-                seg_manager=seg_manager  # Pass seg_manager for merging
+                seg_manager=seg_manager,  # Pass seg_manager for merging
+                cache=self.cache  # Pass cache for fast repeated loads
             )
 
             # Connect signals

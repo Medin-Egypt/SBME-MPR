@@ -7,3 +7,4 @@ CTdata/
 utils/__pycache__/detect_orientation.cpython-313.pyc
 utils/__pycache__/loader.cpython-313.pyc
 utils/__pycache__/SliceViewLabel.cpython-313.pyc
+.cache/
