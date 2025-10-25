@@ -224,7 +224,10 @@ class MPRViewer(QMainWindow):
             # Show MPR mode buttons, hide 3D mode buttons
             self.mpr_mode_group.show()
             self.td_mode_group.hide()
-            # Update MPR views if file is loaded (in case segmentations were loaded while hidden)
+            # Show MPR tools group, hide 3D tools group
+            self.tools_group.show()
+            self.td_tools_group.hide()
+            # Update MPR views if file is loaded
             if self.file_loaded:
                 self.mpr_widget.update_all_views()
         elif tab_name == "3d":
@@ -234,7 +237,9 @@ class MPRViewer(QMainWindow):
             # Hide MPR mode buttons, show 3D mode buttons
             self.mpr_mode_group.hide()
             self.td_mode_group.show()
-
+            # Hide MPR tools group, show 3D tools group
+            self.tools_group.hide()
+            self.td_tools_group.show()
     def create_sidebar(self):
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
@@ -299,6 +304,47 @@ class MPRViewer(QMainWindow):
         layout.addWidget(self.td_mode_group)
         self.td_mode_group.hide()  # Initially hidden
 
+         # ADD THIS NEW SECTION FOR 3D TOOLS:
+        # 3D Tools section (only visible in 3D tab)
+        self.td_tools_group = QGroupBox("3D Tools:")
+        td_tools_layout = QVBoxLayout()
+        td_tools_buttons_widget = QWidget()
+        td_tools_buttons_layout = QGridLayout(td_tools_buttons_widget)
+        self.td_tools_group_buttons = QButtonGroup(self)
+        self.td_tools_group_buttons.setExclusive(True)
+        
+        # Create 3 buttons in a row
+        td_tool_configs = [
+            ("td_tool_btn_0", "Icons/blockage.png", "Blockage"),
+            ("td_tool_btn_1", "Icons/focusnav.png", "Focus Navigation"),
+            ("td_tool_btn_2", "Icons/movenav.png", "Move Navigation")
+        ]
+        
+        for i, (btn_name, icon_path, tooltip) in enumerate(td_tool_configs):
+            btn = QPushButton()
+            btn.setFixedSize(40, 40)
+            btn.setObjectName(btn_name)
+            btn.setCheckable(True)
+            btn.setToolTip(tooltip)
+            td_tools_buttons_layout.addWidget(btn, 0, i)
+            self.td_tools_group_buttons.addButton(btn, i)
+            # Add icon
+            try:
+                icon = QIcon(QPixmap(icon_path))
+                if not icon.isNull():
+                    btn.setIcon(icon)
+                    btn.setIconSize(QSize(32, 32))
+            except Exception:
+                btn.setText(str(i))
+        
+        td_tools_layout.addWidget(td_tools_buttons_widget)
+        self.td_tools_group.setLayout(td_tools_layout)
+        layout.addWidget(self.td_tools_group)
+        self.td_tools_group.hide()  # Initially hidden
+
+        # Add Segmentation section (existing code continues here)
+        seg_group = QGroupBox("Segmentation:")
+
         # Add Segmentation section
         seg_group = QGroupBox("Segmentation:")
         seg_layout = QVBoxLayout()
@@ -318,7 +364,7 @@ class MPRViewer(QMainWindow):
         seg_group.setLayout(seg_layout)
         layout.addWidget(seg_group)
 
-        tools_group = QGroupBox("Tools:")
+        self.tools_group = QGroupBox("Tools:")
         tools_main_layout = QVBoxLayout()
         tools_grid_widget = QWidget()
         tools_layout = QGridLayout(tools_grid_widget)
@@ -358,8 +404,8 @@ class MPRViewer(QMainWindow):
         reset_btn.clicked.connect(self.on_reset_clicked)
         tools_main_layout.addWidget(reset_btn)
 
-        tools_group.setLayout(tools_main_layout)
-        layout.addWidget(tools_group)
+        self.tools_group.setLayout(tools_main_layout)
+        layout.addWidget(self.tools_group)
 
         export_group = QGroupBox("Export:")
         export_layout = QGridLayout()
