@@ -6,6 +6,7 @@ from pathlib import Path
 from skimage import measure
 import json
 import gc
+import collections
 from .segmentation_cache import SegmentationCache
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -147,28 +148,43 @@ def categorize_structures(filenames):
     --------
     dict : {system_name: [filenames]}
     """
-    systems = {
-        'Skeletal - Spine': [],
-        'Skeletal - Ribs': [],
-        'Skeletal - Limbs': [],
-        'Skeletal - Other': [],
-        'Muscular': [],
-        'Cardiovascular - Arteries': [],
-        'Cardiovascular - Veins': [],
-        'Cardiovascular - Heart': [],
-        'Other': []
-    }
+    systems = collections.defaultdict(list)
+
+    skeletal_limbs_keywords = ['humerus', 'scapula', 'clavicula', 'femur', 'hip', 'skull']
+    muscular_keywords = ['gluteus', 'autochthon', 'iliopsoas', 'muscle']
+
+    # --- MERGED Brain Part list ---
+    # These base names will catch 'Left_frontal_lobe', 'Right_frontal_lobe', etc.
+    brain_parts_list = [
+        "frontal_lobe",
+        "parietal_lobe",
+        "temporal_lobe",
+        "occipital_lobe",
+        "limbic_lobe",
+        "insular_lobe",
+        "cerebellum",
+        "cerebrum",
+        # Unpaired parts remain the same
+        "Brainstem",
+        "Vermis"
+    ]
+    # --- End Definitions ---
 
     for fname in filenames:
+        # Ensure fname is a Path object if it's not already
+        if not isinstance(fname, Path):
+            fname = Path(fname)
+
         name_lower = fname.stem.lower()
 
+        # --- Broad Categories (Checked First) ---
         if 'vertebrae' in name_lower or 'sacrum' in name_lower:
             systems['Skeletal - Spine'].append(fname)
         elif 'rib' in name_lower or 'sternum' in name_lower or 'costal' in name_lower:
             systems['Skeletal - Ribs'].append(fname)
-        elif any(bone in name_lower for bone in ['humerus', 'scapula', 'clavicula', 'femur', 'hip', 'skull']):
+        elif any(bone in name_lower for bone in skeletal_limbs_keywords):
             systems['Skeletal - Limbs'].append(fname)
-        elif any(muscle in name_lower for muscle in ['gluteus', 'autochthon', 'iliopsoas', 'muscle']):
+        elif any(muscle in name_lower for muscle in muscular_keywords):
             systems['Muscular'].append(fname)
         elif 'artery' in name_lower or 'aorta' in name_lower or 'trunk' in name_lower:
             systems['Cardiovascular - Arteries'].append(fname)
@@ -176,10 +192,27 @@ def categorize_structures(filenames):
             systems['Cardiovascular - Veins'].append(fname)
         elif 'heart' in name_lower:
             systems['Cardiovascular - Heart'].append(fname)
-        else:
-            systems['Other'].append(fname)
 
-    # Remove empty systems
+        # --- Specific Categories (Checked Second) ---
+        else:
+            categorized = False
+            # Loop through the specific brain parts
+            for part_name in brain_parts_list:
+                # Check if the base part name (e.g., "frontal_lobe")
+                # is in the lowercase filename
+                if part_name.lower() in name_lower:
+                    # Create a merged category
+                    # e.g., "Nervous System - frontal_lobe"
+                    systems[f'Nervous System - {part_name}'].append(fname)
+                    categorized = True
+                    # Found its category, break the inner loop
+                    break
+
+                    # If it wasn't a broad category and not a specific brain part
+            if not categorized:
+                systems['Other'].append(fname)
+
+    # Convert back to a regular dict, removing empty systems
     systems = {k: v for k, v in systems.items() if v}
 
     return systems
@@ -729,6 +762,7 @@ class SegmentationViewer3D(QWidget):
                         opacity=self.system_opacity[system_name],
                         show_edges=False,
                         lighting=True,
+                        smooth_shading=True,
                         name=filename
                     )
                     self.actors[filename] = actor
@@ -844,6 +878,7 @@ class SegmentationViewer3D(QWidget):
                 opacity=self.system_opacity[system_name],
                 show_edges=False,
                 lighting=True,
+                smooth_shading=True,
                 name=filename
             )
             self.actors[filename] = actor
@@ -1121,6 +1156,7 @@ class SegmentationViewer3D(QWidget):
                 actor = self.plotter.add_mesh(
                     plane_mesh,
                     texture=texture,
+                    lighting=False,
                     name=f"plane_{plane_type}",
                     opacity=1,
                     show_edges=False
@@ -1187,6 +1223,7 @@ class SegmentationViewer3D(QWidget):
             actor = self.plotter.add_mesh(
                 plane_mesh,
                 texture=texture,
+                lighting=False,
                 name=plane_name,
                 opacity=0.8,
                 show_edges=False
