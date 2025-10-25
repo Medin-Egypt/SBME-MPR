@@ -45,7 +45,7 @@ def load_colormap(colormap_file):
     return rgb_colormap
 
 
-def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=20, decimation_target=0.3):
+def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=50, decimation_target=0.1):
     """
     Convert NIfTI segmentation mask to surface mesh using marching cubes.
     Optimized for memory efficiency with mesh decimation.
