@@ -355,6 +355,11 @@ class MPRWidget(QWidget):
         for ui_title, view_type in views_to_update:
             self.update_view(ui_title, view_type, sync_crosshair=True)
 
+        # Notify 3D widget of slice changes for plane updates
+        # Only update if the 3D widget is visible to prevent rendering conflicts
+        if hasattr(self.main_window, 'td_widget') and self.main_window.td_widget.isVisible():
+            self.main_window.td_widget.update_slice_positions(self.slices)
+
     def update_view(self, ui_title: str, view_type: str, sync_crosshair=False):
         if ui_title not in self.view_labels:
             return

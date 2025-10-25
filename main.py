@@ -224,6 +224,9 @@ class MPRViewer(QMainWindow):
             # Show MPR mode buttons, hide 3D mode buttons
             self.mpr_mode_group.show()
             self.td_mode_group.hide()
+            # Update MPR views if file is loaded (in case segmentations were loaded while hidden)
+            if self.file_loaded:
+                self.mpr_widget.update_all_views()
         elif tab_name == "3d":
             # Hide MPR view, show 3D view
             self.mpr_widget.hide()
@@ -443,7 +446,7 @@ class MPRViewer(QMainWindow):
 
                 # --- Pass data to child widgets ---
                 self.mpr_widget.set_data(self.data, self.affine, self.dims, self.intensity_min, self.intensity_max)
-                self.td_widget.set_data(self.data, self.affine)  # 3D widget may need data
+                self.td_widget.set_data(self.data, self.affine, self.dims, self.intensity_min, self.intensity_max)  # 3D widget may need data
 
                 QMessageBox.information(self, "Success", f"NIfTI file loaded successfully!\nDimensions: {self.dims}")
             except Exception as e:
@@ -464,7 +467,7 @@ class MPRViewer(QMainWindow):
 
                 # --- Pass data to child widgets ---
                 self.mpr_widget.set_data(self.data, self.affine, self.dims, self.intensity_min, self.intensity_max)
-                self.td_widget.set_data(self.data, self.affine)  # 3D widget may need data
+                self.td_widget.set_data(self.data, self.affine, self.dims, self.intensity_min, self.intensity_max)  # 3D widget may need data
 
                 orientation, confidence, _ = od.predict_middle_dicom_from_folder(folder_path)
                 orientation_info = f"\n\nDetected Orientation: {orientation} with confidence: {(confidence * 100):.2f}%"
@@ -520,7 +523,9 @@ class MPRViewer(QMainWindow):
         if self.segmentation_data_list:
             # Notify MPR widget to update
             self.mpr_widget.set_segmentation_visibility(True)
-            self.mpr_widget.update_all_views()
+            # Only update MPR views if the widget is currently visible
+            if self.mpr_widget.isVisible():
+                self.mpr_widget.update_all_views()
             self.td_widget.set_segmentations(self.segmentation_files)
             QMessageBox.information(
                 self, "Success", f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
@@ -545,7 +550,9 @@ class MPRViewer(QMainWindow):
 
             # Notify MPR widget to update
             self.mpr_widget.set_segmentation_visibility(False)
-            self.mpr_widget.update_all_views()
+            # Only update MPR views if the widget is currently visible
+            if self.mpr_widget.isVisible():
+                self.mpr_widget.update_all_views()
 
             # Notify 3D widget
             self.td_widget.clear_segmentations()
