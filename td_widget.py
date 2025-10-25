@@ -98,6 +98,10 @@ class TDWidget(QWidget):
                 intensity_max=self.intensity_max
             )
             self.layout.addWidget(self.viewer_3d)
+
+            # Connect the finished signal to notify main window
+            self.viewer_3d.loading_finished.connect(self._on_3d_loading_finished)
+
             self.viewer_3d.initialize()
             # Update slider ranges after initialization
             if self.dims:
@@ -108,6 +112,72 @@ class TDWidget(QWidget):
             # Optionally, show an error message in the placeholder
             if self.placeholder:
                 self.placeholder.setText(f"Failed to create 3D view:\n{e}")
+
+    def _on_3d_loading_finished(self):
+        """Called when 3D mesh loading completes."""
+        # Notify main window that loading is complete
+        if self.main_window and hasattr(self.main_window, '_on_segmentation_loading_complete'):
+            self.main_window._on_segmentation_loading_complete()
+
+    def set_segmentations_with_merge(self, file_paths, seg_manager):
+        """
+        Creates 3D viewer and handles both merged volume building and 3D mesh loading.
+        Shows unified progress dialog for both operations.
+        """
+        # Clear current content
+        if self.viewer_3d:
+            self.layout.removeWidget(self.viewer_3d)
+            self.viewer_3d.deleteLater()
+            self.viewer_3d = None
+        if self.placeholder:
+            self.layout.removeWidget(self.placeholder)
+            self.placeholder.deleteLater()
+            self.placeholder = None
+
+        if not file_paths:
+            self.clear_segmentations()
+            return
+
+        try:
+            # Create and add the 3D viewer with volume data
+            self.viewer_3d = SegmentationViewer3D(
+                nifti_files=file_paths,
+                parent=self,
+                volume_data=self.volume_data,
+                affine=self.affine,
+                dims=self.dims,
+                intensity_min=self.intensity_min,
+                intensity_max=self.intensity_max
+            )
+            self.layout.addWidget(self.viewer_3d)
+
+            # Connect the finished signal to notify main window
+            self.viewer_3d.loading_finished.connect(self._on_3d_loading_finished)
+            # Connect the merged volume ready signal to update MPR views
+            self.viewer_3d.merged_volume_ready.connect(self._on_merged_volume_ready)
+
+            # Initialize with unified loading (merge + 3D)
+            self.viewer_3d.initialize_with_merge(seg_manager)
+
+            # Update slider ranges after initialization
+            if self.dims:
+                self.viewer_3d.update_slider_ranges()
+        except Exception as e:
+            print(f"Failed to create 3D viewer: {e}")
+            self.clear_segmentations()  # Revert to placeholder on error
+            # Optionally, show an error message in the placeholder
+            if self.placeholder:
+                self.placeholder.setText(f"Failed to create 3D view:\n{e}")
+
+    def _on_merged_volume_ready(self):
+        """Called when merged volume is ready - update 2D MPR views."""
+        if self.main_window:
+            # Notify MPR widget to update (2D views ready)
+            self.main_window.mpr_widget.set_segmentation_visibility(True)
+            # Only update MPR views if the widget is currently visible
+            if self.main_window.mpr_widget.isVisible():
+                self.main_window.mpr_widget.update_all_views()
+            print("2D segmentation views updated")
 
     def clear_segmentations(self):
         """Removes the 3D viewer and shows the placeholder."""

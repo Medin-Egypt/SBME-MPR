@@ -82,7 +82,7 @@ class MPRWidget(QWidget):
         self.show_main_views_initially()
         self.update_all_views()
 
-    def update_data(self, data, dims, segmentation_data_list):
+    def update_data(self, data, dims):
         """Called by main window when data is modified (e.g., cropped)."""
         self.dims = dims
 
@@ -383,7 +383,7 @@ class MPRWidget(QWidget):
 
         pixmap = self.numpy_to_qpixmap(slice_data)
 
-        if self.segmentation_visible and self.main_window.segmentation_data_list and view_type != 'segmentation':
+        if self.segmentation_visible and self.main_window.segmentation_manager.get_count() > 0 and view_type != 'segmentation':
             pixmap = self.add_segmentation_overlay(pixmap, view_type)
 
         if isinstance(label, SliceViewLabel):
@@ -428,7 +428,8 @@ class MPRWidget(QWidget):
             return
         label = self.view_labels['segmentation']
 
-        if not self.main_window.segmentation_data_list:
+        seg_manager = self.main_window.segmentation_manager
+        if seg_manager.get_count() == 0 or seg_manager.merged_volume is None:
             label.setText("Segmentation View\n\n[Load segmentation data]")
             return
 
@@ -448,36 +449,45 @@ class MPRWidget(QWidget):
         seg_image.fill(QColor(0, 0, 0))
         painter = QPainter(seg_image)
 
-        for seg_data in self.main_window.segmentation_data_list:
+        # Get merged slice
+        if view_type == 'axial':
+            axis = 'axial'
+        elif view_type == 'coronal':
+            axis = 'coronal'
+        elif view_type == 'sagittal':
+            axis = 'sagittal'
+        else:
+            axis = 'axial'
+
+        seg_slice = seg_manager.get_merged_slice(axis, slice_idx)
+
+        if seg_slice is not None:
+            # Apply transformations
             if view_type == 'axial':
-                seg_slice = seg_data[:, :, slice_idx]
                 seg_slice = np.flipud(np.rot90(seg_slice))
             elif view_type == 'coronal':
-                seg_slice = seg_data[:, slice_idx, :]
                 seg_slice = np.rot90(seg_slice)
             elif view_type == 'sagittal':
-                seg_slice = seg_data[slice_idx, :, :]
+                # Sagittal just needs rotation to match orientation
                 seg_slice = np.rot90(seg_slice)
 
             from scipy import ndimage
             mask = seg_slice > 0.5
-            if not mask.any():
-                continue
+            if mask.any():
+                eroded = ndimage.binary_erosion(mask)
+                edges = mask & ~eroded
 
-            eroded = ndimage.binary_erosion(mask)
-            edges = mask & ~eroded
+                scale_y = correct_height / edges.shape[0]
+                scale_x = correct_width / edges.shape[1]
 
-            scale_y = correct_height / edges.shape[0]
-            scale_x = correct_width / edges.shape[1]
+                pen = QPen(QColor(255, 0, 0), 2)
+                painter.setPen(pen)
 
-            pen = QPen(QColor(255, 0, 0), 2)
-            painter.setPen(pen)
-
-            edge_coords = np.argwhere(edges)
-            for y, x in edge_coords:
-                scaled_x = int(x * scale_x)
-                scaled_y = int(y * scale_y)
-                painter.drawPoint(scaled_x, scaled_y)
+                edge_coords = np.argwhere(edges)
+                for y, x in edge_coords:
+                    scaled_x = int(x * scale_x)
+                    scaled_y = int(y * scale_y)
+                    painter.drawPoint(scaled_x, scaled_y)
 
         painter.end()
         pixmap = QPixmap.fromImage(seg_image)
@@ -526,7 +536,11 @@ class MPRWidget(QWidget):
         return QPixmap.fromImage(q_img)
 
     def add_segmentation_overlay(self, base_pixmap, view_type):
-        """Adds red outline overlay from segmentation data to the pixmap."""
+        """Adds red outline overlay from merged segmentation data to the pixmap."""
+        seg_manager = self.main_window.segmentation_manager
+        if seg_manager.get_count() == 0 or seg_manager.merged_volume is None:
+            return base_pixmap
+
         image = base_pixmap.toImage()
         painter = QPainter(image)
         pen = QPen(QColor(255, 0, 0), 2)
@@ -534,41 +548,44 @@ class MPRWidget(QWidget):
 
         if view_type == 'axial':
             slice_idx = self.slices['axial']
+            axis = 'axial'
         elif view_type == 'coronal':
             slice_idx = self.slices['coronal']
+            axis = 'coronal'
         elif view_type == 'sagittal':
             slice_idx = self.slices['sagittal']
+            axis = 'sagittal'
         else:
             painter.end()
             return base_pixmap
 
-        for seg_data in self.main_window.segmentation_data_list:
+        # Get merged slice (much faster than individual slices)
+        seg_slice = seg_manager.get_merged_slice(axis, slice_idx)
+
+        if seg_slice is not None:
+            # Apply transformations based on view type
             if view_type == 'axial':
-                seg_slice = seg_data[:, :, slice_idx]
                 seg_slice = np.flipud(np.rot90(seg_slice))
             elif view_type == 'coronal':
-                seg_slice = seg_data[:, slice_idx, :]
                 seg_slice = np.rot90(seg_slice)
             elif view_type == 'sagittal':
-                seg_slice = seg_data[slice_idx, :, :]
+                # Sagittal just needs rotation to match orientation
                 seg_slice = np.rot90(seg_slice)
 
             from scipy import ndimage
             mask = seg_slice > 0.5
-            if not mask.any():
-                continue
+            if mask.any():
+                eroded = ndimage.binary_erosion(mask)
+                edges = mask & ~eroded
 
-            eroded = ndimage.binary_erosion(mask)
-            edges = mask & ~eroded
+                scale_y = base_pixmap.height() / edges.shape[0]
+                scale_x = base_pixmap.width() / edges.shape[1]
 
-            scale_y = base_pixmap.height() / edges.shape[0]
-            scale_x = base_pixmap.width() / edges.shape[1]
-
-            edge_coords = np.argwhere(edges)
-            for y, x in edge_coords:
-                scaled_x = int(x * scale_x)
-                scaled_y = int(y * scale_y)
-                painter.drawPoint(scaled_x, scaled_y)
+                edge_coords = np.argwhere(edges)
+                for y, x in edge_coords:
+                    scaled_x = int(x * scale_x)
+                    scaled_y = int(y * scale_y)
+                    painter.drawPoint(scaled_x, scaled_y)
 
         painter.end()
         return QPixmap.fromImage(image)
@@ -639,7 +656,7 @@ class MPRWidget(QWidget):
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
-        self.segmentation_visible = True if self.main_window.segmentation_data_list else False
+        self.segmentation_visible = True if self.main_window.segmentation_manager.get_count() > 0 else False
 
         self.main_window.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
         self.main_window.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
@@ -660,7 +677,7 @@ class MPRWidget(QWidget):
         self.oblique_view_enabled = True
         self.main_views_enabled = False
         self.segmentation_view_enabled = False
-        self.segmentation_visible = True if self.main_window.segmentation_data_list else False
+        self.segmentation_visible = True if self.main_window.segmentation_manager.get_count() > 0 else False
         self.oblique_axis_visible = True
 
         self.main_window.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)

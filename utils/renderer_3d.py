@@ -5,11 +5,12 @@ import numpy as np
 from pathlib import Path
 from skimage import measure
 import json
+import gc
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton
+    QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton, QProgressDialog
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QCoreApplication, QThread, pyqtSignal
 
 
 def load_colormap(colormap_file):
@@ -43,9 +44,10 @@ def load_colormap(colormap_file):
     return rgb_colormap
 
 
-def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=50):
+def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=20, decimation_target=0.3):
     """
     Convert NIfTI segmentation mask to surface mesh using marching cubes.
+    Optimized for memory efficiency with mesh decimation.
 
     Parameters:
     -----------
@@ -54,7 +56,9 @@ def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=50):
     smoothing : bool
         Whether to apply Laplacian smoothing
     smoothing_iterations : int
-        Number of smoothing iterations
+        Number of smoothing iterations (reduced from 50 to 20 for performance)
+    decimation_target : float
+        Target reduction ratio for mesh decimation (0.3 = reduce to 30% of original triangles)
 
     Returns:
     --------
@@ -65,11 +69,15 @@ def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=50):
     """
     # Load NIfTI file
     nii = nib.load(str(nifti_path))
-    data = nii.get_fdata()
-    affine = nii.affine
+    # Use float32 instead of float64 to save memory
+    data = nii.get_fdata(dtype=np.float32)
+    affine = nii.affine.copy()
 
     # Binarize if needed (assumes non-zero values are the segmentation)
     binary_data = (data > 0).astype(np.uint8)
+
+    # Clear original data to free memory
+    del data
 
     # Apply marching cubes
     verts, faces, normals, values = measure.marching_cubes(
@@ -78,29 +86,54 @@ def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=50):
         spacing=nii.header.get_zooms()[:3]
     )
 
+    # Clear binary data to free memory
+    del binary_data
+
+    # Convert to float32 for memory efficiency
+    verts = verts.astype(np.float32)
+    faces = faces.astype(np.int32)
+
     # Create PyVista mesh
     # Ensure faces are correctly formatted for PyVista
     # Each face should be [n_points, p0, p1, p2, ...]
     n_points = 3  # Assuming marching cubes produces triangles
-    faces_pv = np.empty((faces.shape[0], n_points + 1), dtype=np.int_)
+    faces_pv = np.empty((faces.shape[0], n_points + 1), dtype=np.int32)
     faces_pv[:, 0] = n_points
     faces_pv[:, 1:] = faces
 
-    mesh = pv.PolyData(verts, faces_pv)
+    # Clear intermediate face array
+    del faces
+
+    mesh = pv.PolyData(verts.astype(np.float64), faces_pv)
+
+    # Clear intermediate arrays
+    del verts, faces_pv
 
     # Apply affine transformation to align with physical coordinates
     # This transforms voxel coordinates (i, j, k) to physical space (x, y, z)
     # Marching cubes output is already in scaled voxel space (due to spacing)
     # We need to apply the affine transformation
-    verts_transformed = nib.affines.apply_affine(affine, verts)
+    verts_transformed = nib.affines.apply_affine(affine, mesh.points).astype(np.float32)
     mesh.points = verts_transformed
+    del verts_transformed
 
-    # Optional smoothing
+    # Decimate mesh to reduce triangle count and memory usage
+    # Only decimate if mesh has more than 10000 faces
+    # Use n_cells (new API) instead of deprecated n_faces
+    if mesh.n_cells > 10000:
+        try:
+            original_cells = mesh.n_cells
+            mesh = mesh.decimate(decimation_target, volume_preservation=True)
+            print(f"  Decimated mesh from {original_cells} to {mesh.n_cells} faces ({decimation_target*100}% target)")
+        except Exception as e:
+            print(f"  Warning: Decimation failed. {e}")
+
+    # Optional smoothing (reduced iterations for performance)
     if smoothing:
         try:
             mesh = mesh.smooth(n_iter=smoothing_iterations, relaxation_factor=0.1)
         except Exception as e:
-            print(f"Warning: Smoothing failed. {e}")
+            print(f"  Warning: Smoothing failed. {e}")
 
     return mesh, affine
 
@@ -151,7 +184,171 @@ def categorize_structures(filenames):
     return systems
 
 
+class MeshLoadWorker(QThread):
+    """
+    Worker thread for loading meshes in the background.
+    Prevents UI freezing during mesh generation.
+    Can also handle merged volume building.
+    """
+    # Signals
+    progress = pyqtSignal(str, int, int)  # (message, current, total)
+    mesh_loaded = pyqtSignal(str, object, list, str)  # (filename, mesh, color, system_name)
+    merged_volume_ready = pyqtSignal()  # Emitted when merged volume is built
+    finished = pyqtSignal()
+    error = pyqtSignal(str, str)  # (filename, error_message)
+
+    def __init__(self, files_to_load, colormap, system_opacities, seg_manager=None):
+        super().__init__()
+        self.files_to_load = files_to_load  # List of (system_name, filepath) tuples
+        self.colormap = colormap
+        self.system_opacities = system_opacities
+        self.seg_manager = seg_manager  # Optional: for building merged volume
+        self._cancelled = False
+
+    def cancel(self):
+        """Cancel the loading process."""
+        self._cancelled = True
+
+    def run(self):
+        """
+        Load files once and use for both merged volume and 3D meshes.
+        Much more efficient than loading twice!
+        """
+        total = len(self.files_to_load)
+
+        # Initialize merged volume if seg_manager provided
+        if self.seg_manager is not None and total > 0:
+            # Get shape from first file
+            first_file = self.files_to_load[0][1]
+            try:
+                nii = nib.load(str(first_file), mmap=True)
+                shape = nii.shape
+                print(f"Initializing merged volume with shape {shape}")
+                self.seg_manager.merged_volume = np.zeros(shape, dtype=np.uint8)
+            except Exception as e:
+                print(f"Error initializing merged volume: {e}")
+                self.seg_manager = None  # Disable merging on error
+
+        # Process each file: load once, use for both 2D merge and 3D mesh
+        for idx, (system_name, nifti_file) in enumerate(self.files_to_load):
+            if self._cancelled:
+                break
+
+            filename = nifti_file.stem
+            self.progress.emit(f"Loading {filename}...", idx, total)
+
+            try:
+                # Load NIfTI file ONCE
+                nii = nib.load(str(nifti_file))
+                data = nii.get_fdata(dtype=np.float32)
+                affine = nii.affine
+
+                # Step 1: Add to merged volume for 2D (if seg_manager provided)
+                if self.seg_manager is not None:
+                    try:
+                        # Apply flip to match main data
+                        data_flipped = data[::-1, :, :]
+                        # Binarize and merge
+                        binary_mask = (data_flipped > 0.5).astype(np.uint8)
+                        self.seg_manager.merged_volume = np.maximum(
+                            self.seg_manager.merged_volume,
+                            binary_mask
+                        )
+                    except Exception as e:
+                        print(f"  Error merging {filename} to 2D volume: {e}")
+
+                # Step 2: Generate 3D mesh from the same data
+                try:
+                    # Binarize
+                    binary_data = (data > 0).astype(np.uint8)
+
+                    # Apply marching cubes
+                    verts, faces, normals, values = measure.marching_cubes(
+                        binary_data,
+                        level=0.5,
+                        spacing=nii.header.get_zooms()[:3]
+                    )
+
+                    # Clear binary data to free memory
+                    del binary_data, data
+
+                    # Create PyVista mesh
+                    verts = verts.astype(np.float32)
+                    faces = faces.astype(np.int32)
+
+                    n_points = 3
+                    faces_pv = np.empty((faces.shape[0], n_points + 1), dtype=np.int32)
+                    faces_pv[:, 0] = n_points
+                    faces_pv[:, 1:] = faces
+                    del faces
+
+                    mesh = pv.PolyData(verts.astype(np.float64), faces_pv)
+                    del verts, faces_pv
+
+                    # Apply affine transformation
+                    verts_transformed = nib.affines.apply_affine(affine, mesh.points).astype(np.float32)
+                    mesh.points = verts_transformed
+                    del verts_transformed
+
+                    # Decimate mesh if needed
+                    if mesh.n_cells > 10000:
+                        try:
+                            original_cells = mesh.n_cells
+                            mesh = mesh.decimate(0.3, volume_preservation=True)
+                            print(f"  Decimated {filename}: {original_cells} -> {mesh.n_cells} faces")
+                        except Exception as e:
+                            print(f"  Warning: Decimation failed for {filename}. {e}")
+
+                    # Smooth mesh
+                    try:
+                        mesh = mesh.smooth(n_iter=20, relaxation_factor=0.1)
+                    except Exception as e:
+                        print(f"  Warning: Smoothing failed for {filename}. {e}")
+
+                    # Find color
+                    color = [0.5, 0.5, 0.5]  # Default grey
+                    for key, rgb in self.colormap.items():
+                        if key.lower() in filename.lower():
+                            color = rgb
+                            break
+
+                    # Emit mesh loaded signal
+                    self.mesh_loaded.emit(filename, mesh, color, system_name)
+
+                except Exception as e:
+                    print(f"  Error generating 3D mesh for {filename}: {e}")
+                    self.error.emit(filename, str(e))
+
+            except Exception as e:
+                self.error.emit(filename, str(e))
+                import traceback
+                traceback.print_exc()
+
+        # Emit merged volume ready signal after all files processed
+        if self.seg_manager is not None and not self._cancelled:
+            print(f"Merged volume complete: {np.count_nonzero(self.seg_manager.merged_volume)} non-zero voxels")
+            self.merged_volume_ready.emit()
+
+        self.finished.emit()
+
+
 class SegmentationViewer3D(QWidget):
+    """
+    3D visualization widget for medical image segmentations.
+
+    Memory Optimizations:
+    - Meshes are NOT cached; VTK actors manage their own geometry data
+    - Mesh decimation reduces triangle count to 30% for meshes > 10k faces
+    - Float32 data types used instead of float64 where possible
+    - Garbage collection forced after batch loading
+    - Reduced smoothing iterations (20 instead of 50)
+    - Progress dialogs shown during loading with cancellation support
+    """
+
+    # Signals
+    loading_finished = pyqtSignal()  # Emitted when all loading finishes
+    merged_volume_ready = pyqtSignal()  # Emitted when merged volume is built
+
     def __init__(self, nifti_files, parent=None, volume_data=None, affine=None, dims=None, intensity_min=0, intensity_max=255):
         super().__init__(parent)
         try:
@@ -168,13 +365,16 @@ class SegmentationViewer3D(QWidget):
         self.systems = categorize_structures(self.nifti_files)
         print(f"Organized into {len(self.systems)} systems")
 
-        # Storage for meshes and actors (for lazy loading)
-        self.meshes = {}  # {filename_stem: pv.PolyData}
+        # Storage for actors (meshes are not cached to save memory)
         self.actors = {}  # {filename_stem: actor}
 
         # System visibility and opacity states
         self.system_visible = {system: True for system in self.systems.keys()}
         self.system_opacity = {system: 1.0 for system in self.systems.keys()}
+
+        # Background loading
+        self.load_worker = None
+        self.load_progress_dialog = None
 
         # UI components
         self.system_checkboxes = {}
@@ -402,55 +602,104 @@ class SegmentationViewer3D(QWidget):
         """
         Toggle visibility of an entire system.
         Loads meshes on demand if they aren't already loaded.
+        Uses synchronous loading (simpler, avoids threading complexity for small sets).
         """
         self.system_visible[system_name] = visible
+        files_to_load = self.systems.get(system_name, [])
 
-        # Iterate over all files in this system
-        for nifti_file in self.systems.get(system_name, []):
-            filename = nifti_file.stem
-
-            if visible:
-                # --- Show or Load Actor ---
-                if filename in self.actors:
-                    # Actor already exists, just show it
-                    self.actors[filename].SetVisibility(True)
-                else:
-                    # Actor doesn't exist, need to load it
-                    print(f"Loading {filename}...")
-                    try:
-                        # Check if mesh is cached
-                        if filename in self.meshes:
-                            mesh = self.meshes[filename]
-                        else:
-                            # Generate and cache mesh
-                            mesh, _ = nifti_to_surface(nifti_file)
-                            self.meshes[filename] = mesh
-
-                        # Find color
-                        color = [0.5, 0.5, 0.5]  # Default grey
-                        for key, rgb in self.colormap.items():
-                            if key.lower() in filename.lower():
-                                color = rgb
-                                break
-
-                        # Add to plotter and store actor
-                        actor = self.plotter.add_mesh(
-                            mesh,
-                            color=color,
-                            opacity=self.system_opacity[system_name],
-                            show_edges=False,
-                            lighting=True,
-                            name=filename
-                        )
-                        self.actors[filename] = actor
-
-                    except Exception as e:
-                        print(f"Error processing {filename}: {e}")
-
-            else:
-                # --- Hide Actor ---
+        # If hiding, just hide all actors
+        if not visible:
+            for nifti_file in files_to_load:
+                filename = nifti_file.stem
                 if filename in self.actors:
                     self.actors[filename].SetVisibility(False)
+            self.plotter.render()
+            return
+
+        # If showing, count how many files need to be loaded
+        files_needing_load = [f for f in files_to_load if f.stem not in self.actors]
+
+        # Create progress dialog if we have files to load
+        progress = None
+        if files_needing_load:
+            progress = QProgressDialog(
+                f"Loading {system_name}...",
+                "Cancel",
+                0,
+                len(files_needing_load),
+                self
+            )
+            progress.setWindowTitle("Loading 3D Segmentations")
+            progress.setWindowModality(Qt.ApplicationModal)  # Changed to ApplicationModal
+            progress.setMinimumDuration(0)  # Show immediately
+            progress.setValue(0)
+
+        # Iterate over all files in this system
+        load_count = 0
+        for nifti_file in files_to_load:
+            filename = nifti_file.stem
+
+            # --- Show or Load Actor ---
+            if filename in self.actors:
+                # Actor already exists, just show it
+                self.actors[filename].SetVisibility(True)
+            else:
+                # Actor doesn't exist, need to load it
+                if progress:
+                    progress.setLabelText(f"Loading {system_name}...\n{filename}")
+                    progress.setValue(load_count)
+                    QCoreApplication.processEvents()  # Update UI
+
+                    # Check if user cancelled
+                    if progress.wasCanceled():
+                        print(f"Loading cancelled by user")
+                        if progress:
+                            progress.close()
+                        self.plotter.render()
+                        return
+
+                print(f"Loading {filename}...")
+                try:
+                    # Generate mesh (not cached to save memory)
+                    mesh, _ = nifti_to_surface(nifti_file)
+
+                    # Find color
+                    color = [0.5, 0.5, 0.5]  # Default grey
+                    for key, rgb in self.colormap.items():
+                        if key.lower() in filename.lower():
+                            color = rgb
+                            break
+
+                    # Add to plotter and store actor
+                    actor = self.plotter.add_mesh(
+                        mesh,
+                        color=color,
+                        opacity=self.system_opacity[system_name],
+                        show_edges=False,
+                        lighting=True,
+                        name=filename
+                    )
+                    self.actors[filename] = actor
+
+                    # Don't cache mesh - let VTK/PyVista manage the memory
+                    # This saves significant memory as we don't store duplicate data
+                    del mesh
+
+                    load_count += 1
+
+                except Exception as e:
+                    print(f"Error processing {filename}: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        # Close progress dialog
+        if progress:
+            progress.setValue(len(files_needing_load))
+            progress.close()
+
+            # Force garbage collection to free memory from deleted mesh objects
+            gc.collect()
+            print(f"Loaded {load_count} meshes for {system_name}. Memory freed via garbage collection.")
 
         self.plotter.render()
 
@@ -474,21 +723,191 @@ class SegmentationViewer3D(QWidget):
         self.plotter.render()
 
     def initialize(self):
-        """Initialize the 3D view UI. Does not load meshes."""
+        """Initialize the 3D view UI and load default visible systems in background thread."""
         # Setup camera and display
         self.plotter.add_axes()
         self.plotter.reset_camera()
         self.plotter.show()
 
         # Initially load all visible systems (if any exist)
-        # This will trigger the on-demand loading for default-visible systems
         if self.systems:
-            print("Initializing 3D viewer... Loading default visible systems.")
+            print("Initializing 3D viewer... Loading default visible systems in background.")
+
+            # Collect files to load
+            files_to_load = []
             for system_name, is_visible in self.system_visible.items():
                 if is_visible:
-                    self.toggle_system(system_name, True)
+                    for nifti_file in self.systems[system_name]:
+                        files_to_load.append((system_name, nifti_file))
+
+            if files_to_load:
+                # Create progress dialog
+                self.load_progress_dialog = QProgressDialog(
+                    "Loading 3D segmentations...",
+                    "Cancel",
+                    0,
+                    len(files_to_load),
+                    self
+                )
+                self.load_progress_dialog.setWindowTitle("Initializing 3D Viewer")
+                self.load_progress_dialog.setWindowModality(Qt.WindowModal)
+                self.load_progress_dialog.setMinimumDuration(0)
+                self.load_progress_dialog.setValue(0)
+
+                # Create and start worker thread
+                self.load_worker = MeshLoadWorker(files_to_load, self.colormap, self.system_opacity)
+
+                # Connect signals
+                self.load_worker.progress.connect(self._on_load_progress)
+                self.load_worker.mesh_loaded.connect(self._on_mesh_loaded)
+                self.load_worker.finished.connect(self._on_load_finished)
+                self.load_worker.error.connect(self._on_load_error)
+                self.load_progress_dialog.canceled.connect(self._on_load_cancelled)
+
+                # Start loading
+                self.load_worker.start()
+            else:
+                # No files to load, emit signal immediately
+                print("Initializing 3D viewer... No visible systems to load.")
+                self.loading_finished.emit()
+
         else:
+            # No segmentations at all, emit signal immediately
             print("Initializing 3D viewer... No segmentations to load.")
+            self.loading_finished.emit()
+
+    def _on_load_progress(self, message, current, total):
+        """Update progress dialog."""
+        if self.load_progress_dialog:
+            self.load_progress_dialog.setLabelText(message)
+            self.load_progress_dialog.setValue(current)
+
+    def _on_mesh_loaded(self, filename, mesh, color, system_name):
+        """Handle mesh loaded in background thread - add to plotter."""
+        try:
+            # Add to plotter (must be done in main thread)
+            actor = self.plotter.add_mesh(
+                mesh,
+                color=color,
+                opacity=self.system_opacity[system_name],
+                show_edges=False,
+                lighting=True,
+                name=filename
+            )
+            self.actors[filename] = actor
+            print(f"Added {filename} to 3D scene")
+
+            # Render to show progress
+            self.plotter.render()
+
+        except Exception as e:
+            print(f"Error adding mesh {filename} to plotter: {e}")
+
+    def _on_load_error(self, filename, error_msg):
+        """Handle load error."""
+        print(f"Error loading {filename}: {error_msg}")
+
+    def _on_load_finished(self):
+        """Handle loading finished."""
+        if self.load_progress_dialog:
+            self.load_progress_dialog.setValue(self.load_progress_dialog.maximum())
+            self.load_progress_dialog.close()
+            self.load_progress_dialog = None
+
+        # Force garbage collection
+        gc.collect()
+        print(f"3D loading complete. Loaded {len(self.actors)} meshes. Memory freed via garbage collection.")
+
+        # Clean up worker
+        if self.load_worker:
+            self.load_worker.deleteLater()
+            self.load_worker = None
+
+        # Emit signal to notify that loading is complete
+        self.loading_finished.emit()
+
+    def _on_load_cancelled(self):
+        """Handle user cancelling the load."""
+        if self.load_worker:
+            print("Cancelling 3D loading...")
+            self.load_worker.cancel()
+            self.load_worker.wait()  # Wait for thread to finish
+            self.load_worker.deleteLater()
+            self.load_worker = None
+
+        if self.load_progress_dialog:
+            self.load_progress_dialog.close()
+            self.load_progress_dialog = None
+
+        gc.collect()
+        print("3D loading cancelled by user.")
+
+        # Emit signal even when cancelled
+        self.loading_finished.emit()
+
+    def initialize_with_merge(self, seg_manager):
+        """
+        Initialize the 3D view with unified loading:
+        1. Build merged volume for 2D views
+        2. Load 3D meshes for 3D views
+        Shows a single progress dialog for both operations.
+        """
+        # Setup camera and display
+        self.plotter.add_axes()
+        self.plotter.reset_camera()
+        self.plotter.show()
+
+        # Collect files to load
+        files_to_load = []
+        for system_name, is_visible in self.system_visible.items():
+            if is_visible:
+                for nifti_file in self.systems[system_name]:
+                    files_to_load.append((system_name, nifti_file))
+
+        if files_to_load:
+            print("Starting unified segmentation loading (2D merge + 3D meshes)...")
+
+            # Create progress dialog
+            self.load_progress_dialog = QProgressDialog(
+                "Loading segmentations...",
+                "Cancel",
+                0,
+                len(files_to_load),  # Each file loaded once for both operations
+                self
+            )
+            self.load_progress_dialog.setWindowTitle("Loading Segmentations")
+            self.load_progress_dialog.setWindowModality(Qt.WindowModal)
+            self.load_progress_dialog.setMinimumDuration(0)
+            self.load_progress_dialog.setValue(0)
+
+            # Create and start worker thread with seg_manager
+            self.load_worker = MeshLoadWorker(
+                files_to_load,
+                self.colormap,
+                self.system_opacity,
+                seg_manager=seg_manager  # Pass seg_manager for merging
+            )
+
+            # Connect signals
+            self.load_worker.progress.connect(self._on_load_progress)
+            self.load_worker.mesh_loaded.connect(self._on_mesh_loaded)
+            self.load_worker.merged_volume_ready.connect(self._on_merged_volume_ready)
+            self.load_worker.finished.connect(self._on_load_finished)
+            self.load_worker.error.connect(self._on_load_error)
+            self.load_progress_dialog.canceled.connect(self._on_load_cancelled)
+
+            # Start loading
+            self.load_worker.start()
+        else:
+            # No files to load, emit signals immediately
+            print("No visible systems to load.")
+            self.loading_finished.emit()
+
+    def _on_merged_volume_ready(self):
+        """Handle merged volume being ready."""
+        print("Merged volume ready for 2D views")
+        # Forward the signal
+        self.merged_volume_ready.emit()
 
     def create_plane_mesh(self, plane_type, slice_idx):
         """

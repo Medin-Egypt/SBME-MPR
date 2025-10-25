@@ -14,6 +14,7 @@ from PyQt5.QtGui import QPixmap, QIcon, QImage, QColor
 import utils.loader as loader
 import utils.detect_orientation as od
 from utils.ui_classes import SliceCropDialog
+from utils.segmentation_manager import SegmentationManager
 
 # Import the new widget classes
 from mpr_widget import MPRWidget
@@ -48,9 +49,14 @@ class MPRViewer(QMainWindow):
         self.original_intensity_max = 255
         self.crop_bounds = None
         self.original_data = None
-        self.segmentation_files = []
-        self.segmentation_data_list = []
-        self.original_segmentation_data_list = []
+
+        # Use SegmentationManager for memory-efficient segmentation handling
+        self.segmentation_manager = SegmentationManager(max_cache_slices=100)
+        self.original_segmentation_manager = SegmentationManager(max_cache_slices=100)
+
+        # Pending segmentation load results (shown after 3D loading completes)
+        self._pending_seg_load_count = 0
+        self._pending_seg_failed = []
 
         # --- Window Dragging ---
         self.drag_position = None
@@ -538,61 +544,108 @@ class MPRViewer(QMainWindow):
         if not file_paths:
             return
 
-        self.segmentation_files = []
-        self.segmentation_data_list = []
-        self.original_segmentation_data_list = []
+        # Clear existing segmentations
+        self.segmentation_manager.clear()
+        self.original_segmentation_manager.clear()
 
+        # Create progress dialog
+        progress = QMessageBox(self)
+        progress.setWindowTitle("Loading Segmentations")
+        progress.setText("Validating segmentation files...")
+        progress.setStandardButtons(QMessageBox.NoButton)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+        QApplication.processEvents()
+
+        successful_count = 0
+        failed_files = []
+
+        # Add files to manager (fast, no data loading)
         for file_path in file_paths:
             try:
-                nifti_file = nib.load(file_path)
-                seg_data = nifti_file.get_fdata()
-                seg_data = seg_data[::-1, :, :]  # Apply same flip as main data
+                # Quick validation: check shape matches
+                nii = nib.load(file_path, mmap=True)
+                seg_shape = nii.shape
 
-                if seg_data.shape != self.data.shape:
-                    QMessageBox.warning(
-                        self, "Dimension Mismatch",
-                        f"Segmentation file {os.path.basename(file_path)} has different dimensions.\n"
-                        f"Expected: {self.data.shape}, Got: {seg_data.shape}"
-                    )
+                if seg_shape != self.data.shape:
+                    failed_files.append((os.path.basename(file_path), f"Shape mismatch: {seg_shape} != {self.data.shape}"))
                     continue
 
-                self.segmentation_files.append(file_path)
-                self.segmentation_data_list.append(seg_data)
-                self.original_segmentation_data_list.append(seg_data.copy())  # Store original
+                # Add to managers (uses mmap, no memory load)
+                if self.segmentation_manager.add_file(file_path):
+                    self.original_segmentation_manager.add_file(file_path)
+                    successful_count += 1
+                else:
+                    failed_files.append((os.path.basename(file_path), "Failed to add"))
 
             except Exception as e:
-                QMessageBox.critical(
-                    self, "Error",
-                    f"Failed to load segmentation file {os.path.basename(file_path)}:\n{str(e)}"
-                )
+                failed_files.append((os.path.basename(file_path), str(e)))
 
-        if self.segmentation_data_list:
-            # Notify MPR widget to update
-            self.mpr_widget.set_segmentation_visibility(True)
-            # Only update MPR views if the widget is currently visible
-            if self.mpr_widget.isVisible():
-                self.mpr_widget.update_all_views()
-            self.td_widget.set_segmentations(self.segmentation_files)
-            QMessageBox.information(
-                self, "Success", f"Loaded {len(self.segmentation_data_list)} segmentation file(s)."
+        # Force close and process events to ensure dialog closes
+        progress.close()
+        progress.deleteLater()
+        QApplication.processEvents()
+
+        # Handle results
+        if successful_count > 0:
+            # Store validation results for later message
+            self._pending_seg_load_count = successful_count
+            self._pending_seg_failed = failed_files
+
+            # Start unified loading process (merged volume + 3D meshes)
+            # This will trigger the callback when complete
+            self.td_widget.set_segmentations_with_merge(
+                self.segmentation_manager.get_file_paths(),
+                self.segmentation_manager
             )
+
+        else:
+            # No successful loads - show error immediately
+            QMessageBox.warning(self, "No Segmentations Loaded", "No valid segmentation files were loaded.")
+            if failed_files:
+                message = "Errors:\n"
+                for fname, reason in failed_files[:10]:
+                    message += f"  - {fname}: {reason}\n"
+                QMessageBox.critical(self, "Loading Errors", message)
+
+    def _on_segmentation_loading_complete(self):
+        """Called by 3D widget when all meshes are loaded. Shows the final success message."""
+        if self._pending_seg_load_count > 0:
+            message = f"Successfully loaded {self._pending_seg_load_count} segmentation file(s)."
+
+            if self._pending_seg_failed:
+                message += f"\n\n3D meshes generated for {len(self.td_widget.viewer_3d.actors) if self.td_widget.viewer_3d else 0} structures."
+                message += f"\n\nFailed to load {len(self._pending_seg_failed)} file(s):\n"
+                for fname, reason in self._pending_seg_failed[:5]:  # Show first 5
+                    message += f"  - {fname}: {reason}\n"
+                if len(self._pending_seg_failed) > 5:
+                    message += f"  ... and {len(self._pending_seg_failed) - 5} more"
+            else:
+                mesh_count = len(self.td_widget.viewer_3d.actors) if self.td_widget.viewer_3d else 0
+                message += f"\n\n3D meshes generated for {mesh_count} structures."
+
+            QMessageBox.information(self, "Segmentation Loading Complete", message)
+
+            # Clear pending data
+            self._pending_seg_load_count = 0
+            self._pending_seg_failed = []
 
     def delete_segmentation_files(self):
         """Deletes all loaded segmentation files."""
-        if not self.segmentation_data_list:
+        seg_count = self.segmentation_manager.get_count()
+        if seg_count == 0:
             QMessageBox.information(self, "No Segmentation", "No segmentation files are currently loaded.")
             return
 
         reply = QMessageBox.question(
             self, "Delete Segmentation",
-            f"Are you sure you want to delete all {len(self.segmentation_data_list)} segmentation file(s)?",
+            f"Are you sure you want to delete all {seg_count} segmentation file(s)?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
-            self.segmentation_files = []
-            self.segmentation_data_list = []
-            self.original_segmentation_data_list = []
+            self.segmentation_manager.clear()
+            self.original_segmentation_manager.clear()
 
             # Notify MPR widget to update
             self.mpr_widget.set_segmentation_visibility(False)
@@ -634,14 +687,12 @@ class MPRViewer(QMainWindow):
         self.data = self.original_data[:, :, start_idx: end_idx + 1].copy()
         self.dims = self.data.shape
 
-        # Also crop loaded segmentations
-        new_seg_list = []
-        for seg_data in self.original_segmentation_data_list:
-            new_seg_list.append(seg_data[:, :, start_idx: end_idx + 1].copy())
-        self.segmentation_data_list = new_seg_list
+        # Note: Segmentations are handled via manager with lazy loading
+        # The manager will continue to work with the original files,
+        # but the MPR widget will only request slices within the cropped range
 
         # Notify MPR widget of the data change
-        self.mpr_widget.update_data(self.data, self.dims, self.segmentation_data_list)
+        self.mpr_widget.update_data(self.data, self.dims)
 
         QMessageBox.information(self, "Crop Applied",
                                 f"Volume cropped to show slices {start_idx + 1} to {end_idx + 1}.\n"
@@ -690,10 +741,10 @@ class MPRViewer(QMainWindow):
             self.dims = self.data.shape
             self.crop_bounds = None
 
-            self.segmentation_data_list = [seg.copy() for seg in self.original_segmentation_data_list]
+            # Segmentations are already at full resolution via manager
 
             # Notify MPR widget of data change
-            self.mpr_widget.update_data(self.data, self.dims, self.segmentation_data_list)
+            self.mpr_widget.update_data(self.data, self.dims)
 
     # --- Export Methods ---
 
