@@ -73,6 +73,9 @@
   "iliopsoas_left": "#d15b5b",
   "iliopsoas_right": "#d15b5b",
   "pulmonary_vein": "#2b6cb0",
+
+  "pulmonary_artery": "#00AABB",
+
   "brachiocephalic_trunk": "#cc0000",
   "subclavian_artery_right": "#cc0000",
   "subclavian_artery_left": "#cc0000",
@@ -87,15 +90,21 @@
   "iliac_artery_right": "#cc0000",
   "iliac_vena_left": "#3366cc",
   "iliac_vena_right": "#3366cc",
-  "heart": "#b30000",
+
+  "aorta": "#cc0000",
+  "coronary_arteries": "#cc0000",
+
+  "heart_atrium": "#ed656e",
+  "heart_ventricle": "#ed656e",
+  "heart_myocardium": "#ed656e",
+
   "Left_frontal_lobe": "#FF0000",
-  "Left_insular_lobe": "#e57520",
+  "insular_lobe": "#808080",
   "Left_limbic_lobe": "#FF1493",
   "Left_occipital_lobe": "#32CD32",
   "Left_parietal_lobe": "#0000FF",
   "Left_temporal_lobe": "#FFFF00",
   "Right_frontal_lobe": "#DC143C",
-  "Right_insular_lobe": "#fc8c37",
   "Right_limbic_lobe": "#C71585",
   "Right_occipital_lobe": "#228B22",
   "Right_parietal_lobe": "#1E90FF",
