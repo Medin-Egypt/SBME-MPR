@@ -19,6 +19,8 @@ class MPRWidget(QWidget):
             'coronal': QColor(100, 150, 255),  # Blue
             'sagittal': QColor(255, 100, 100),  # Red
             'oblique': QColor(255, 255, 100),  # Yellow
+            'curved': QColor(200, 100, 255),  # Purple
+
         }
 
         # Local copies of dims/affine for quick access
@@ -49,6 +51,7 @@ class MPRWidget(QWidget):
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
+        self.curved_view_enabled = False
 
         # NEW properties for coordinated scaling/zooming
         self.global_zoom_factor = 1.0
@@ -130,7 +133,7 @@ class MPRWidget(QWidget):
         panels = [
             ("Coronal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
             ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
-            ("Segmentation", 'segmentation', 1, 1)
+            ("Segmentation", 'segmentation', 1, 1), ("Curved", 'curved', 1, 1)
         ]
 
         for title, view_type, row, col in panels:
@@ -349,6 +352,8 @@ class MPRWidget(QWidget):
             views_to_update.append(('oblique', 'oblique'))
         if self.segmentation_view_enabled:
             views_to_update.append(('segmentation', 'segmentation'))
+        if self.curved_view_enabled:
+            views_to_update.append(('curved', 'curved'))
 
         self.calculate_and_set_uniform_default_scale()
 
@@ -371,6 +376,9 @@ class MPRWidget(QWidget):
 
         if view_type == 'segmentation':
             self.update_segmentation_view()
+            return
+        elif view_type == 'curved':
+            self.update_curved_view()
             return
 
         slice_data = loader.get_slice_data(
@@ -493,6 +501,16 @@ class MPRWidget(QWidget):
         pixmap = QPixmap.fromImage(seg_image)
         scaled_pixmap = pixmap.scaled(label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         label.setPixmap(scaled_pixmap)
+
+    def update_curved_view(self):
+        if 'curved' not in self.view_labels:
+            return
+        label = self.view_labels['curved']
+
+        # For now, display a placeholder
+        # You'll implement the actual curved MPR logic here later
+        label.setText("Curved View\n\n[Curved MPR functionality coming soon]")
+        label.setStyleSheet("color: #C864FF; font-size: 18px;")  # Purple text
 
     def on_segmentation_view_changed(self, view_name):
         """Callback when the segmentation view dropdown changes."""
@@ -619,7 +637,7 @@ class MPRWidget(QWidget):
         panels = [
             ("Coronal", 'coronal', 0, 0), ("Sagittal", 'sagittal', 0, 1),
             ("Axial", 'axial', 1, 0), ("Oblique", 'oblique', 1, 1),
-            ("Segmentation", 'segmentation', 1, 1)
+            ("Segmentation", 'segmentation', 1, 1), ("Curved", 'curved', 1, 1)
         ]
 
         for title, view_type, row, col in panels:
@@ -642,6 +660,8 @@ class MPRWidget(QWidget):
         self.main_views_enabled = True
         self.oblique_view_enabled = False
         self.segmentation_view_enabled = False
+        self.curved_view_enabled = False 
+
         self.restore_views()
         for view_name, panel in self.view_panels.items():
             if view_name in ['coronal', 'sagittal', 'axial']:
@@ -658,9 +678,11 @@ class MPRWidget(QWidget):
         self.segmentation_view_enabled = False
         self.segmentation_visible = True if self.main_window.segmentation_manager.get_count() > 0 else False
 
-        self.main_window.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
+        self.main_window.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
         self.main_window.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
+        self.main_window.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
 
+        
         for view_name, panel in self.view_panels.items():
             if view_name in ['coronal', 'sagittal', 'axial']:
                 panel.show()
@@ -671,7 +693,6 @@ class MPRWidget(QWidget):
     def toggle_oblique_view(self, checked):
         if not checked and self.oblique_view_enabled:
             self.toggle_main_views(True)
-            self.main_window.findChild(QPushButton, "mpr_mode_btn_0").setChecked(True)
             return
         self.restore_views()
         self.oblique_view_enabled = True
@@ -681,7 +702,7 @@ class MPRWidget(QWidget):
         self.oblique_axis_visible = True
 
         self.main_window.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
-        self.main_window.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
+        self.main_window.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['coronal', 'sagittal', 'axial', 'oblique']:
@@ -696,20 +717,43 @@ class MPRWidget(QWidget):
     def toggle_segmentation_view(self, checked):
         if not checked and self.segmentation_view_enabled:
             self.toggle_main_views(True)
-            self.main_window.findChild(QPushButton, "mpr_mode_btn_0").setChecked(True)
             return
         self.restore_views()
         self.segmentation_view_enabled = True
         self.main_views_enabled = False
         self.oblique_view_enabled = False
 
-        self.main_window.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
+        self.main_window.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
         self.main_window.findChild(QPushButton, "mpr_mode_btn_2").setChecked(False)
+
 
         for view_name, panel in self.view_panels.items():
             if view_name in ['coronal', 'sagittal', 'axial', 'segmentation']:
                 panel.show()
                 if view_name == 'segmentation':
+                    self.viewing_grid.removeWidget(panel)
+                    self.viewing_grid.addWidget(panel, 1, 1)
+            else:
+                panel.hide()
+        self.update_visible_views()
+    
+    def toggle_curved_view(self, checked):
+        if not checked and self.curved_view_enabled:
+            self.toggle_main_views(True)
+            return
+        self.restore_views()
+        self.curved_view_enabled = True
+        self.main_views_enabled = False
+        self.oblique_view_enabled = False
+        self.segmentation_view_enabled = False
+
+        self.main_window.findChild(QPushButton, "mpr_mode_btn_0").setChecked(False)
+        self.main_window.findChild(QPushButton, "mpr_mode_btn_1").setChecked(False)
+
+        for view_name, panel in self.view_panels.items():
+            if view_name in ['coronal', 'sagittal', 'axial', 'curved']:
+                panel.show()
+                if view_name == 'curved':
                     self.viewing_grid.removeWidget(panel)
                     self.viewing_grid.addWidget(panel, 1, 1)
             else:

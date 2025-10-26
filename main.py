@@ -93,9 +93,9 @@ class MPRViewer(QMainWindow):
         container_layout.addWidget(content_widget)
 
         # --- Add Icons ---
-        self.add_image_to_button("mpr_mode_btn_0", "Icons/windows.png", "3 Main Views")
-        self.add_image_to_button("mpr_mode_btn_1", "Icons/heart.png", "Segmentation View")
-        self.add_image_to_button("mpr_mode_btn_2", "Icons/diagram.png", "Oblique View")
+        self.add_image_to_button("mpr_mode_btn_0", "Icons/heart.png", "Segmentation View")
+        self.add_image_to_button("mpr_mode_btn_1", "Icons/diagram.png", "Oblique View")
+        self.add_image_to_button("mpr_mode_btn_2", "Icons/curved.png", "Curved View")
         self.add_image_to_button("td_mode_btn_0", "Icons/surface.png", "Surface Mode")
         self.add_image_to_button("td_mode_btn_1", "Icons/Planes.png", "Planes Mode")
         self.add_image_to_button("tool_btn_0_0", "Icons/mouse.png", "Navigation")
@@ -106,11 +106,6 @@ class MPRViewer(QMainWindow):
         self.add_image_to_button("tool_btn_1_2", "Icons/video.png", "Cine Mode")
         self.add_image_to_button("export_btn_0", "Icons/NII.png", "NIFTI Export")
         self.add_image_to_button("export_btn_1", "Icons/DIC.png", "DICOM Export")
-
-        # --- Set Initial State ---
-        main_views_btn = self.findChild(QPushButton, "mpr_mode_btn_0")
-        if main_views_btn:
-            main_views_btn.setChecked(True)
 
         default_tool = self.findChild(QPushButton, "tool_btn_0_0")
         if default_tool:
@@ -270,15 +265,16 @@ class MPRViewer(QMainWindow):
             btn.setCheckable(True)
             mpr_mode_buttons_layout.addWidget(btn, 0, i)
             self.mpr_mode_group_buttons.addButton(btn, i)
+
             if i == 0:
                 # Connect to the method in MPRWidget
-                btn.clicked.connect(self.mpr_widget.toggle_main_views)
+                btn.clicked.connect(self.mpr_widget.toggle_segmentation_view)
             elif i == 1:
                 # Connect to the method in MPRWidget
-                btn.clicked.connect(self.mpr_widget.toggle_segmentation_view)
+                btn.clicked.connect(self.mpr_widget.toggle_oblique_view)
             elif i == 2:
                 # Connect to the method in MPRWidget
-                btn.clicked.connect(self.mpr_widget.toggle_oblique_view)
+                btn.clicked.connect(self.mpr_widget.toggle_curved_view)
 
         mpr_mode_layout.addWidget(mpr_mode_buttons_widget)
         self.mpr_mode_group.setLayout(mpr_mode_layout)
