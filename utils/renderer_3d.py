@@ -8,11 +8,12 @@ import json
 import gc
 import collections
 from .segmentation_cache import SegmentationCache
+from .centerline_extractor import extract_centerline, compute_camera_positions
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton, QProgressDialog
+    QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton, QProgressDialog, QComboBox
 )
-from PyQt5.QtCore import Qt, QCoreApplication, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QCoreApplication, QThread, pyqtSignal, QTimer
 
 
 def load_colormap(colormap_file):
@@ -484,6 +485,18 @@ class SegmentationViewer3D(QWidget):
                 'coronal': dims[1] // 2
             }
 
+        # Centerline walkthrough properties
+        self.walkthrough_active = False
+        self.walkthrough_timer = QTimer()
+        self.walkthrough_timer.timeout.connect(self._update_walkthrough)
+        self.camera_path = []  # List of camera positions along centerline
+        self.current_path_index = 0
+        self.walkthrough_speed = 50  # milliseconds per step
+        self.centerline_mesh_name = None  # Name of mesh being walked through
+        self.centerline_actor = None  # Actor for visualizing centerline
+        self.centerline_points = None  # Stored centerline points for recomputing camera path
+        self.look_ahead_distance = 10  # Look ahead distance in number of points
+
         # Create UI
         self.setup_ui()
 
@@ -520,6 +533,10 @@ class SegmentationViewer3D(QWidget):
         self.slice_controls_group = self.create_slice_controls()
         controls_layout.addWidget(self.slice_controls_group)
         self.slice_controls_group.hide()  # Initially hidden
+
+        # Walkthrough controls group
+        self.walkthrough_controls_group = self.create_walkthrough_controls()
+        controls_layout.addWidget(self.walkthrough_controls_group)
 
         # Scroll area for systems
         scroll = QScrollArea()
@@ -611,6 +628,81 @@ class SegmentationViewer3D(QWidget):
             layout.addLayout(plane_layout)
 
             self.slice_sliders[plane_type] = (slider, value_label)
+
+        group.setLayout(layout)
+        return group
+
+    def create_walkthrough_controls(self):
+        """Create centerline walkthrough controls"""
+        group = QGroupBox("Centerline Walkthrough")
+
+        layout = QVBoxLayout()
+
+        # Mesh selection
+        mesh_layout = QVBoxLayout()
+        mesh_label = QLabel("Select Mesh:")
+        mesh_layout.addWidget(mesh_label)
+
+        self.mesh_selector = QComboBox()
+        self.mesh_selector.addItem("-- Select a mesh --")
+        mesh_layout.addWidget(self.mesh_selector)
+        layout.addLayout(mesh_layout)
+
+        # Play/Pause button (computes centerline automatically on first play)
+        self.play_pause_btn = QPushButton("▶ Play")
+        self.play_pause_btn.clicked.connect(self._toggle_walkthrough)
+        self.play_pause_btn.setEnabled(False)
+        layout.addWidget(self.play_pause_btn)
+
+        # Stop button
+        self.stop_btn = QPushButton("⏹ Stop")
+        self.stop_btn.clicked.connect(self._stop_walkthrough)
+        self.stop_btn.setEnabled(False)
+        layout.addWidget(self.stop_btn)
+
+        # Speed control
+        speed_layout = QVBoxLayout()
+        speed_label = QLabel("Speed:")
+        speed_layout.addWidget(speed_label)
+
+        speed_slider_layout = QHBoxLayout()
+        self.speed_slider = QSlider(Qt.Horizontal)
+        self.speed_slider.setMinimum(10)
+        self.speed_slider.setMaximum(200)
+        self.speed_slider.setValue(50)
+        self.speed_slider.valueChanged.connect(self._on_speed_changed)
+
+        self.speed_value_label = QLabel("50 ms")
+        self.speed_value_label.setMinimumWidth(60)
+
+        speed_slider_layout.addWidget(self.speed_slider)
+        speed_slider_layout.addWidget(self.speed_value_label)
+        speed_layout.addLayout(speed_slider_layout)
+        layout.addLayout(speed_layout)
+
+        # Progress slider
+        progress_layout = QVBoxLayout()
+        progress_label = QLabel("Progress:")
+        progress_layout.addWidget(progress_label)
+
+        progress_slider_layout = QHBoxLayout()
+        self.progress_slider = QSlider(Qt.Horizontal)
+        self.progress_slider.setMinimum(0)
+        self.progress_slider.setMaximum(100)
+        self.progress_slider.setValue(0)
+        self.progress_slider.setEnabled(False)
+        self.progress_slider.valueChanged.connect(self._on_progress_changed)
+
+        self.progress_value_label = QLabel("0%")
+        self.progress_value_label.setMinimumWidth(60)
+
+        progress_slider_layout.addWidget(self.progress_slider)
+        progress_slider_layout.addWidget(self.progress_value_label)
+        progress_layout.addLayout(progress_slider_layout)
+        layout.addLayout(progress_layout)
+
+        # Connect mesh selector change
+        self.mesh_selector.currentIndexChanged.connect(self._on_mesh_selected)
 
         group.setLayout(layout)
         return group
@@ -787,6 +879,10 @@ class SegmentationViewer3D(QWidget):
             gc.collect()
             print(f"Loaded {load_count} meshes for {system_name}. Memory freed via garbage collection.")
 
+        # Update mesh selector if any meshes were loaded
+        if load_count > 0:
+            self._update_mesh_selector()
+
         self.plotter.render()
 
     def set_system_opacity(self, system_name, opacity):
@@ -883,6 +979,9 @@ class SegmentationViewer3D(QWidget):
             )
             self.actors[filename] = actor
             print(f"Added {filename} to 3D scene")
+
+            # Update mesh selector for walkthrough
+            self._update_mesh_selector()
 
             # Render to show progress
             self.plotter.render()
@@ -1113,6 +1212,8 @@ class SegmentationViewer3D(QWidget):
             self.controls_title_label.setText("Plane Controls")
             self.slice_controls_group.show()
             self.systems_scroll_area.hide()
+            # Hide walkthrough controls in planes mode
+            self.walkthrough_controls_group.hide()
         else:
             # Show segmentation actors that were visible
             for nifti_file in self.nifti_files:
@@ -1129,6 +1230,8 @@ class SegmentationViewer3D(QWidget):
             self.controls_title_label.setText("Anatomical Systems")
             self.slice_controls_group.hide()
             self.systems_scroll_area.show()
+            # Show walkthrough controls in surface mode
+            self.walkthrough_controls_group.show()
 
         self.plotter.render()
 
@@ -1243,3 +1346,235 @@ class SegmentationViewer3D(QWidget):
         for plane_type in ['axial', 'sagittal', 'coronal']:
             if plane_type in slices_dict:
                 self.update_plane_position(plane_type, slices_dict[plane_type])
+
+    # ========== Centerline Walkthrough Methods ==========
+
+    def _update_mesh_selector(self):
+        """Update the mesh selector dropdown with loaded meshes"""
+        self.mesh_selector.clear()
+        self.mesh_selector.addItem("-- Select a mesh --")
+
+        for mesh_name in sorted(self.actors.keys()):
+            # Remove .nii or .nii.gz extension from display name
+            display_name = mesh_name.replace('.nii.gz', '').replace('.nii', '')
+            self.mesh_selector.addItem(display_name, mesh_name)  # Store original as data
+
+    def _on_mesh_selected(self, index):
+        """Handle mesh selection change"""
+        if index > 0:  # 0 is the "Select a mesh" placeholder
+            # Get the original mesh name from item data
+            self.centerline_mesh_name = self.mesh_selector.currentData()
+            if not self.centerline_mesh_name:
+                # Fallback if data not set
+                self.centerline_mesh_name = self.mesh_selector.currentText()
+            self.play_pause_btn.setEnabled(True)
+            print(f"Selected mesh: {self.centerline_mesh_name}")
+            # Reset centerline when new mesh is selected
+            self.centerline_points = None
+            self.camera_path = []
+            self.play_pause_btn.setText("▶ Play")
+        else:
+            self.centerline_mesh_name = None
+            self.play_pause_btn.setEnabled(False)
+            self.stop_btn.setEnabled(False)
+
+    def _compute_centerline(self):
+        """Compute the centerline for the selected mesh"""
+        if not self.centerline_mesh_name or self.centerline_mesh_name not in self.actors:
+            print("No valid mesh selected")
+            return False
+
+        # Get the mesh from the actor
+        actor = self.actors[self.centerline_mesh_name]
+        mapper = actor.GetMapper()
+        mesh = mapper.GetInput()
+
+        # Convert VTK data to PyVista mesh
+        pv_mesh = pv.wrap(mesh)
+
+        print(f"Computing centerline for {self.centerline_mesh_name}...")
+        self.play_pause_btn.setEnabled(False)
+        self.play_pause_btn.setText("Computing...")
+        QCoreApplication.processEvents()
+
+        try:
+            # Extract centerline
+            centerline_points = extract_centerline(pv_mesh, resolution=80, smooth=True)
+
+            if len(centerline_points) == 0:
+                print("Failed to extract centerline - no points found")
+                self.play_pause_btn.setText("▶ Play")
+                self.play_pause_btn.setEnabled(True)
+                return False
+
+            # Store centerline points for recomputing camera path
+            self.centerline_points = centerline_points
+
+            # Visualize centerline (currently hidden)
+            self._visualize_centerline(centerline_points)
+
+            # Set initial look-ahead distance based on path length
+            # Look ahead by ~5% of the total path length for smooth camera movement
+            initial_lookahead = max(5, len(centerline_points) // 20)
+            self.look_ahead_distance = initial_lookahead
+
+            # Compute camera positions along centerline
+            self._recompute_camera_path()
+
+            print(f"Computed camera path with {len(self.camera_path)} positions")
+
+            # Enable playback controls
+            self.play_pause_btn.setEnabled(True)
+            self.stop_btn.setEnabled(True)
+            self.progress_slider.setEnabled(True)
+            self.progress_slider.setMaximum(max(1, len(self.camera_path) - 1))
+
+            # Reset progress
+            self.current_path_index = 0
+            self._update_progress_display()
+
+            return True
+
+        except Exception as e:
+            print(f"Error computing centerline: {e}")
+            import traceback
+            traceback.print_exc()
+            self.play_pause_btn.setText("▶ Play")
+            self.play_pause_btn.setEnabled(True)
+            return False
+
+    def _visualize_centerline(self, centerline_points):
+        """Visualize the centerline as a tube in the 3D view"""
+        # Remove existing centerline if any
+        if self.centerline_actor is not None:
+            self.plotter.remove_actor("centerline_path")
+            self.centerline_actor = None
+
+        # Don't visualize centerline - keep it hidden so user can see the structure
+        # The centerline is computed and used for camera path only
+        print("Centerline computed (hidden from view)")
+
+    def _toggle_walkthrough(self):
+        """Toggle play/pause for the walkthrough"""
+        # If no camera path exists yet, compute centerline first
+        if not self.camera_path:
+            if not self.centerline_mesh_name:
+                print("No mesh selected")
+                return
+
+            # Compute centerline automatically on first play
+            print("Computing centerline automatically...")
+            success = self._compute_centerline()
+
+            if not success:
+                print("Failed to compute centerline")
+                return
+
+        if self.walkthrough_active:
+            # Pause
+            self.walkthrough_timer.stop()
+            self.walkthrough_active = False
+            self.play_pause_btn.setText("▶ Play")
+            print("Walkthrough paused")
+        else:
+            # Play
+            self.walkthrough_timer.start(self.walkthrough_speed)
+            self.walkthrough_active = True
+            self.play_pause_btn.setText("⏸ Pause")
+            print("Walkthrough started")
+
+    def _stop_walkthrough(self):
+        """Stop the walkthrough and reset to start"""
+        self.walkthrough_timer.stop()
+        self.walkthrough_active = False
+        self.play_pause_btn.setText("▶ Play")
+        self.current_path_index = 0
+        self._update_progress_display()
+
+        # Reset camera
+        self.plotter.reset_camera()
+        self.plotter.render()
+        print("Walkthrough stopped")
+
+    def _on_speed_changed(self, value):
+        """Handle speed slider changes"""
+        self.walkthrough_speed = value
+        self.speed_value_label.setText(f"{value} ms")
+
+        # Update timer if active
+        if self.walkthrough_active:
+            self.walkthrough_timer.setInterval(self.walkthrough_speed)
+
+    def _recompute_camera_path(self):
+        """Recompute camera path from stored centerline points"""
+        if self.centerline_points is None:
+            return
+
+        self.camera_path = compute_camera_positions(
+            self.centerline_points,
+            look_ahead_distance=self.look_ahead_distance
+        )
+
+        # Update progress slider maximum
+        if len(self.camera_path) > 0:
+            self.progress_slider.setMaximum(max(1, len(self.camera_path) - 1))
+
+        # If currently viewing, update camera immediately
+        if self.current_path_index < len(self.camera_path):
+            self._update_camera_position()
+
+    def _on_progress_changed(self, value):
+        """Handle manual progress slider changes"""
+        if not self.walkthrough_active:  # Only allow manual seeking when paused
+            self.current_path_index = value
+            self._update_camera_position()
+            self._update_progress_display()
+
+    def _update_walkthrough(self):
+        """Update camera position during walkthrough animation"""
+        if not self.camera_path:
+            return
+
+        # Update camera position
+        self._update_camera_position()
+
+        # Advance to next position
+        self.current_path_index += 1
+
+        # Check if we've reached the end
+        if self.current_path_index >= len(self.camera_path):
+            # Loop back to start
+            self.current_path_index = 0
+
+        # Update progress display
+        self._update_progress_display()
+
+    def _update_camera_position(self):
+        """Update the camera to the current path position"""
+        if not self.camera_path or self.current_path_index >= len(self.camera_path):
+            return
+
+        camera_config = self.camera_path[self.current_path_index]
+
+        # Update PyVista camera
+        camera = self.plotter.camera
+        camera.position = camera_config['position']
+        camera.focal_point = camera_config['focal_point']
+        camera.up = camera_config['up']
+
+        self.plotter.render()
+
+    def _update_progress_display(self):
+        """Update the progress slider and label"""
+        if not self.camera_path:
+            return
+
+        # Block signals to avoid triggering _on_progress_changed
+        self.progress_slider.blockSignals(True)
+        self.progress_slider.setValue(self.current_path_index)
+        self.progress_slider.blockSignals(False)
+
+        # Update percentage label
+        if len(self.camera_path) > 0:
+            percentage = int((self.current_path_index / len(self.camera_path)) * 100)
+            self.progress_value_label.setText(f"{percentage}%")
