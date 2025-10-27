@@ -8,7 +8,7 @@ import json
 import gc
 import collections
 from .segmentation_cache import SegmentationCache
-from .centerline_extractor import extract_centerline, compute_camera_positions
+from .centerline_extractor import extract_centerline, compute_camera_positions, estimate_vessel_radius
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton, QProgressDialog, QComboBox, QSpinBox
@@ -220,6 +220,68 @@ def categorize_structures(filenames):
     systems = {k: v for k, v in systems.items() if v}
 
     return systems
+
+
+class BloodFlowWorker(QThread):
+    """
+    Worker thread for computing vessel centerlines in the background.
+    Prevents UI freezing during blood flow initialization.
+    """
+    # Signals
+    progress = pyqtSignal(str, int, int)  # (message, current, total)
+    centerline_computed = pyqtSignal(str, object, float)  # (mesh_name, centerline_points, radius)
+    finished = pyqtSignal(int)  # (vessel_count)
+    error = pyqtSignal(str, str)  # (mesh_name, error_message)
+
+    def __init__(self, vessel_data):
+        """
+        Parameters:
+        -----------
+        vessel_data : list of tuples
+            List of (mesh_name, actor) for vessels to process
+        """
+        super().__init__()
+        self.vessel_data = vessel_data
+        self._cancelled = False
+
+    def cancel(self):
+        """Cancel the computation."""
+        self._cancelled = True
+
+    def run(self):
+        """Compute centerlines for all vessels."""
+        total = len(self.vessel_data)
+        vessel_count = 0
+
+        for idx, (mesh_name, actor) in enumerate(self.vessel_data):
+            if self._cancelled:
+                break
+
+            self.progress.emit(f"Computing centerline for {mesh_name}...", idx, total)
+
+            try:
+                # Get mesh from actor
+                mapper = actor.GetMapper()
+                mesh = mapper.GetInput()
+                pv_mesh = pv.wrap(mesh)
+
+                # Extract centerline
+                centerline_points = extract_centerline(pv_mesh, resolution=50, smooth=True)
+
+                if len(centerline_points) > 10:
+                    # Estimate vessel radius
+                    radius = estimate_vessel_radius(pv_mesh, centerline_points, sample_points=10)
+
+                    # Emit result
+                    self.centerline_computed.emit(mesh_name, centerline_points, radius)
+                    vessel_count += 1
+                else:
+                    self.error.emit(mesh_name, "Centerline too short")
+
+            except Exception as e:
+                self.error.emit(mesh_name, str(e))
+
+        self.finished.emit(vessel_count)
 
 
 class MeshLoadWorker(QThread):
@@ -507,10 +569,11 @@ class SegmentationViewer3D(QWidget):
         self.blood_flow_timer.timeout.connect(self._update_blood_flow)
         self.flow_phase = 0.0  # Current phase of the cardiac cycle (0.0 to 1.0)
         self.vessel_centerlines = {}  # Store centerlines for each vessel {mesh_name: points}
+        self.vessel_radii = {}  # Store estimated radii for each vessel {mesh_name: radius}
         self.vessel_flow_rings = {}  # Store ring actors for each vessel {mesh_name: [ring_actors]}
         self.vessel_ring_positions = {}  # Store ring positions {mesh_name: [position_indices]}
         self.num_rings_per_vessel = 5  # Number of rings traveling down each vessel (increased for better visual)
-        self.ring_base_mesh = None  # Shared ring mesh for all rings
+        self.blood_flow_worker = None  # Worker thread for computing centerlines
 
         # Create UI
         self.setup_ui()
@@ -1713,57 +1776,96 @@ class SegmentationViewer3D(QWidget):
             self._start_blood_flow()
 
     def _start_blood_flow(self):
-        """Start the blood flow visualization with moving rings"""
+        """Start the blood flow visualization with moving rings (using background thread)"""
         print(f"Starting blood flow visualization at {self.heart_rate} BPM...")
         self.blood_flow_btn.setEnabled(False)
         self.blood_flow_btn.setText("Computing...")
-        QCoreApplication.processEvents()
 
-        # Compute centerlines for all visible vessels
-        vessel_count = 0
+        # Collect vessel data for processing
+        vessel_data = []
         for mesh_name, actor in self.actors.items():
-            if not actor.GetVisibility():
-                continue
+            if actor.GetVisibility() and (self._is_artery(mesh_name) or self._is_vein(mesh_name)):
+                vessel_data.append((mesh_name, actor))
 
-            if self._is_artery(mesh_name) or self._is_vein(mesh_name):
-                # Get mesh from actor
-                mapper = actor.GetMapper()
-                mesh = mapper.GetInput()
-                pv_mesh = pv.wrap(mesh)
-
-                try:
-                    # Extract centerline (lower resolution for performance)
-                    print(f"  Computing centerline for {mesh_name}...")
-                    centerline_points = extract_centerline(pv_mesh, resolution=50, smooth=True)
-
-                    if len(centerline_points) > 10:  # Need enough points for rings
-                        self.vessel_centerlines[mesh_name] = centerline_points
-
-                        # Initialize ring positions evenly spaced along centerline
-                        spacing = len(centerline_points) // self.num_rings_per_vessel
-                        if spacing < 1:
-                            spacing = 1
-                        initial_positions = [i * spacing for i in range(self.num_rings_per_vessel)]
-                        self.vessel_ring_positions[mesh_name] = initial_positions
-
-                        # Create ring actors for this vessel
-                        success = self._create_flow_rings(mesh_name, actor)
-                        if success:
-                            vessel_count += 1
-                            print(f"  ✓ {mesh_name}: {len(self.vessel_flow_rings[mesh_name])} rings created")
-                        else:
-                            print(f"  ✗ {mesh_name}: failed to create rings")
-                    else:
-                        print(f"  Skipping {mesh_name} - centerline too short")
-
-                except Exception as e:
-                    print(f"  Error computing centerline for {mesh_name}: {e}")
-
-        if vessel_count == 0:
-            print("No vessels found for blood flow visualization")
+        if len(vessel_data) == 0:
+            print("No visible vessels found for blood flow visualization")
             self.blood_flow_btn.setText("▶ Start Blood Flow")
             self.blood_flow_btn.setEnabled(True)
             return
+
+        # Create progress dialog
+        self.blood_flow_progress_dialog = QProgressDialog(
+            "Computing vessel centerlines...",
+            "Cancel",
+            0,
+            len(vessel_data),
+            self
+        )
+        self.blood_flow_progress_dialog.setWindowTitle("Blood Flow Initialization")
+        self.blood_flow_progress_dialog.setWindowModality(Qt.WindowModal)
+        self.blood_flow_progress_dialog.setMinimumDuration(0)
+        self.blood_flow_progress_dialog.setValue(0)
+
+        # Create worker thread
+        self.blood_flow_worker = BloodFlowWorker(vessel_data)
+
+        # Connect signals
+        self.blood_flow_worker.progress.connect(self._on_blood_flow_progress)
+        self.blood_flow_worker.centerline_computed.connect(self._on_centerline_computed)
+        self.blood_flow_worker.finished.connect(self._on_blood_flow_finished)
+        self.blood_flow_worker.error.connect(self._on_blood_flow_error)
+        self.blood_flow_progress_dialog.canceled.connect(self._on_blood_flow_cancelled)
+
+        # Start worker
+        self.blood_flow_worker.start()
+
+    def _on_blood_flow_progress(self, message, current, total):
+        """Handle blood flow computation progress updates"""
+        if self.blood_flow_progress_dialog:
+            self.blood_flow_progress_dialog.setLabelText(message)
+            self.blood_flow_progress_dialog.setValue(current)
+
+    def _on_centerline_computed(self, mesh_name, centerline_points, radius):
+        """Handle computed centerline result"""
+        # Store centerline and radius
+        self.vessel_centerlines[mesh_name] = centerline_points
+        self.vessel_radii[mesh_name] = radius
+
+        # Initialize ring positions evenly spaced along centerline
+        spacing = len(centerline_points) // self.num_rings_per_vessel
+        if spacing < 1:
+            spacing = 1
+        initial_positions = [i * spacing for i in range(self.num_rings_per_vessel)]
+        self.vessel_ring_positions[mesh_name] = initial_positions
+
+        print(f"  ✓ {mesh_name}: centerline computed (radius: {radius:.1f})")
+
+    def _on_blood_flow_error(self, mesh_name, error_msg):
+        """Handle blood flow computation error"""
+        print(f"  ✗ {mesh_name}: {error_msg}")
+
+    def _on_blood_flow_finished(self, vessel_count):
+        """Handle blood flow computation completion"""
+        if self.blood_flow_progress_dialog:
+            self.blood_flow_progress_dialog.close()
+            self.blood_flow_progress_dialog = None
+
+        # Clean up worker
+        if self.blood_flow_worker:
+            self.blood_flow_worker.deleteLater()
+            self.blood_flow_worker = None
+
+        if vessel_count == 0:
+            print("No vessels processed for blood flow visualization")
+            self.blood_flow_btn.setText("▶ Start Blood Flow")
+            self.blood_flow_btn.setEnabled(True)
+            return
+
+        # Create rings for all vessels
+        print(f"Creating flow rings for {vessel_count} vessels...")
+        for mesh_name in self.vessel_centerlines.keys():
+            if mesh_name in self.actors:
+                self._create_flow_rings(mesh_name, self.actors[mesh_name])
 
         print(f"Blood flow visualization ready for {vessel_count} vessels")
 
@@ -1777,6 +1879,23 @@ class SegmentationViewer3D(QWidget):
         self.blood_flow_active = True
         self.blood_flow_btn.setText("⏹ Stop Blood Flow")
         self.blood_flow_btn.setEnabled(True)
+
+    def _on_blood_flow_cancelled(self):
+        """Handle user cancelling blood flow computation"""
+        if self.blood_flow_worker:
+            print("Cancelling blood flow computation...")
+            self.blood_flow_worker.cancel()
+            self.blood_flow_worker.wait()
+            self.blood_flow_worker.deleteLater()
+            self.blood_flow_worker = None
+
+        if self.blood_flow_progress_dialog:
+            self.blood_flow_progress_dialog.close()
+            self.blood_flow_progress_dialog = None
+
+        self.blood_flow_btn.setText("▶ Start Blood Flow")
+        self.blood_flow_btn.setEnabled(True)
+        print("Blood flow computation cancelled")
 
     def _stop_blood_flow(self):
         """Stop the blood flow visualization and remove ring actors"""
@@ -1795,23 +1914,32 @@ class SegmentationViewer3D(QWidget):
 
         # Clear data structures
         self.vessel_centerlines.clear()
+        self.vessel_radii.clear()
         self.vessel_flow_rings.clear()
         self.vessel_ring_positions.clear()
 
         self.plotter.render()
         print("Blood flow visualization stopped")
 
-    def _create_base_ring_mesh(self):
-        """Create a single ring mesh that will be reused for all rings via transforms"""
-        if self.ring_base_mesh is not None:
-            return self.ring_base_mesh
+    def _create_ring_mesh_for_vessel(self, vessel_radius):
+        """
+        Create a ring mesh for a specific vessel radius.
 
-        # Create circle points in XY plane
-        ring_radius = 5.0
+        Parameters:
+        -----------
+        vessel_radius : float
+            Radius of the vessel
+
+        Returns:
+        --------
+        mesh : pv.PolyData
+            Ring mesh with appropriate size
+        """
+        # Create circle points in XY plane with vessel-specific radius
         theta = np.linspace(0, 2*np.pi, 16, endpoint=False)
 
-        circle_x = ring_radius * np.cos(theta)
-        circle_y = ring_radius * np.sin(theta)
+        circle_x = vessel_radius * np.cos(theta)
+        circle_y = vessel_radius * np.sin(theta)
         circle_z = np.zeros_like(theta)
 
         circle_points = np.column_stack([circle_x, circle_y, circle_z])
@@ -1823,15 +1951,15 @@ class SegmentationViewer3D(QWidget):
 
         poly = pv.PolyData(circle_points, lines=lines)
 
-        # Apply tube filter for thickness
-        tube = poly.tube(radius=0.8, n_sides=6)  # Lower n_sides for performance
+        # Apply tube filter with radius proportional to vessel size
+        tube_radius = max(0.3, vessel_radius * 0.15)  # 15% of vessel radius
+        tube = poly.tube(radius=tube_radius, n_sides=6)
 
-        self.ring_base_mesh = tube
         return tube
 
     def _create_flow_rings(self, mesh_name, vessel_actor):
         """
-        Create flow ring actors for a vessel using instanced base mesh.
+        Create flow ring actors for a vessel with proper sizing.
 
         Parameters:
         -----------
@@ -1843,12 +1971,14 @@ class SegmentationViewer3D(QWidget):
         if mesh_name not in self.vessel_centerlines:
             return False
 
-        # Ensure base mesh exists
-        if self.ring_base_mesh is None:
-            self._create_base_ring_mesh()
-
         centerline = self.vessel_centerlines[mesh_name]
         positions = self.vessel_ring_positions[mesh_name]
+
+        # Get vessel-specific radius
+        vessel_radius = self.vessel_radii.get(mesh_name, 5.0)
+
+        # Create ring mesh for this vessel
+        ring_mesh = self._create_ring_mesh_for_vessel(vessel_radius)
 
         # Determine ring color based on vessel type
         if self._is_artery(mesh_name):
@@ -1858,13 +1988,13 @@ class SegmentationViewer3D(QWidget):
             ring_color = [0.2, 0.5, 1.0]  # Bright blue
             ring_opacity = 0.7
 
-        # Create ring actors using the shared base mesh
+        # Create ring actors using vessel-specific mesh
         ring_actors = []
         for pos_idx in positions:
             if pos_idx < len(centerline):
-                # Add mesh with transform - much faster than creating new geometry
+                # Add mesh with transform
                 actor = self.plotter.add_mesh(
-                    self.ring_base_mesh,
+                    ring_mesh,
                     color=ring_color,
                     opacity=ring_opacity,
                     lighting=True,
@@ -1876,6 +2006,7 @@ class SegmentationViewer3D(QWidget):
                     ring_actors.append(actor)
 
         self.vessel_flow_rings[mesh_name] = ring_actors
+        print(f"    Created {len(ring_actors)} rings for {mesh_name} (radius: {vessel_radius:.1f})")
         return len(ring_actors) > 0
 
     def _update_ring_transform(self, actor, centerline, position_idx):
