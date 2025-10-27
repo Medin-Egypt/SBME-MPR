@@ -167,9 +167,17 @@ class SliceViewLabel(QLabel):
         self.show_only_center_point = False
         self.hide_crosshair_completely = False  # Hide all crosshair elements
 
+        # Curved MPR mode
+        self.curved_mpr_mode = False
+        self.curve_points = []  # Local points for this view
+
     def _cine_next_slice(self):
         """Advance to the previous slice in cine mode."""
         if not self.cine_active or not self.parent_viewer.file_loaded:
+            return
+
+        # Curved view doesn't support cine mode
+        if self.view_type == 'curved':
             return
 
         # Access attributes via mpr_widget
@@ -224,6 +232,11 @@ class SliceViewLabel(QLabel):
             event.accept()
 
         elif slide_btn and slide_btn.isChecked():
+            # Curved result view doesn't support scrolling (but other views do when in curved mode)
+            if self.view_type == 'curved':
+                event.accept()
+                return
+            
             # file_loaded is still on the main window
             if not self.parent_viewer.file_loaded:
                 return
@@ -262,8 +275,21 @@ class SliceViewLabel(QLabel):
             super().wheelEvent(event)
 
     def mouseDoubleClickEvent(self, event):
+        # Check if curve tool button is actually checked
+        curve_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_2_0")
+        is_curve_tool_active = curve_btn and curve_btn.isChecked() if curve_btn else False
+        
+        # Check if in Curved MPR mode
+        if self.curved_mpr_mode and is_curve_tool_active and event.button() == Qt.LeftButton:
+            if len(self.parent_viewer.mpr_widget.curved_mpr_points) >= 2:
+                # Confirm the curve
+                print(f"Double-click detected - confirming curve with {len(self.curve_points)} points")
+                self.parent_viewer.mpr_widget.confirm_curved_mpr()
+                event.accept()
+                return
+        
         if event.button() == Qt.LeftButton:
-            # Access attributes and methods via mpr_widget
+            # Normal maximize/restore behavior
             if self.parent_viewer.mpr_widget.maximized_view is None:
                 self.parent_viewer.mpr_widget.maximize_view(self.ui_title.lower())
             else:
@@ -271,6 +297,52 @@ class SliceViewLabel(QLabel):
         super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event):
+        # Check if curve tool button is actually checked (not just the flag)
+        curve_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_2_0")
+        is_curve_tool_active = curve_btn and curve_btn.isChecked() if curve_btn else False
+        
+        # Right-click to remove last point when in curve mode
+        if self.curved_mpr_mode and is_curve_tool_active and event.button() == Qt.RightButton:
+            if len(self.curve_points) > 0:
+                # Remove last point from local list
+                removed_point = self.curve_points.pop()
+                
+                # Remove last point from parent widget's master lists
+                if len(self.parent_viewer.mpr_widget.curved_mpr_points) > 0:
+                    self.parent_viewer.mpr_widget.curved_mpr_points.pop()
+                if len(self.parent_viewer.mpr_widget.curved_mpr_points_3d) > 0:
+                    self.parent_viewer.mpr_widget.curved_mpr_points_3d.pop()
+                
+                self.update()  # Trigger repaint to remove the point
+                print(f"Removed last point. {len(self.curve_points)} points remaining.")
+            else:
+                print("No points to remove.")
+            event.accept()
+            return
+        
+        # Left-click to add point when in curve mode
+        if self.curved_mpr_mode and is_curve_tool_active and event.button() == Qt.LeftButton:
+            if self._original_pixmap and not self._original_pixmap.isNull():
+                # Convert click position to normalized coordinates
+                norm_x, norm_y = self._get_normalized_position(event.pos())
+                
+                # Add point to local list for drawing
+                self.curve_points.append((norm_x, norm_y))
+                
+                # Add point to parent widget's master list
+                self.parent_viewer.mpr_widget.curved_mpr_points.append(
+                    (self.view_type, norm_x, norm_y)
+                )
+                
+                # Convert to 3D coordinates
+                voxel_coords = self._normalized_to_voxel_3d(norm_x, norm_y)
+                self.parent_viewer.mpr_widget.curved_mpr_points_3d.append(voxel_coords)
+                
+                self.update()  # Trigger repaint to show points
+                print(f"Added point {len(self.curve_points)} at ({norm_x:.3f}, {norm_y:.3f}) in {self.view_type} view")
+            event.accept()
+            return
+
         crosshair_tool_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_0")
         contrast_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_1")
         zoom_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_0_2")
@@ -330,8 +402,11 @@ class SliceViewLabel(QLabel):
                 return
 
         if crosshair_tool_btn and crosshair_tool_btn.isChecked() and event.button() == Qt.LeftButton:
-            self._dragging_crosshair = True
-            self._update_crosshair(event.pos())
+            # Crosshair works in all views except the curved result view itself
+            if self.view_type != 'curved':
+                self._dragging_crosshair = True
+                self._update_crosshair(event.pos())
+            # If it's the curved view, just ignore (don't prevent other interactions)
         elif cine_btn and cine_btn.isChecked() and event.button() == Qt.LeftButton:
             if self.cine_active:
                 self.stop_cine()
@@ -513,8 +588,8 @@ class SliceViewLabel(QLabel):
 
         # file_loaded is still on the main window
         if self.parent_viewer.file_loaded and self._original_pixmap and not self._original_pixmap.isNull():
-            # Skip all crosshair drawing if hide_crosshair_completely is True
-            if self.hide_crosshair_completely:
+            # Skip all crosshair drawing if hide_crosshair_completely is True or if this is the curved view
+            if self.hide_crosshair_completely or self.view_type == 'curved':
                 return
 
             painter = QPainter(self)
@@ -544,6 +619,21 @@ class SliceViewLabel(QLabel):
             draw_y = int(
                 (self.normalized_crosshair_y * zoomed_height) + center_offset_y + self.pan_offset_y)
 
+            # Calculate the visible image bounds to constrain crosshair lines
+            # When zoomed in with panning, we need to draw crosshairs only within visible image area
+            if zoomed_width > label_width or zoomed_height > label_height:
+                # Image is larger than label (zoomed in), lines should span the full label
+                line_left = 0
+                line_right = label_width
+                line_top = 0
+                line_bottom = label_height
+            else:
+                # Image is smaller than label (centered), lines should only span the image
+                line_left = max(0, center_offset_x + self.pan_offset_x)
+                line_right = min(label_width, center_offset_x + self.pan_offset_x + zoomed_width)
+                line_top = max(0, center_offset_y + self.pan_offset_y)
+                line_bottom = min(label_height, center_offset_y + self.pan_offset_y + zoomed_height)
+
             # Draw crosshair lines only if not in "center point only" mode
             if not self.show_only_center_point:
                 # Access attributes via mpr_widget
@@ -560,17 +650,19 @@ class SliceViewLabel(QLabel):
                     h_color = colors['axial']
                     v_color = colors['coronal']
 
-                if h_color:
+                # Draw horizontal crosshair line (constrained to visible area)
+                if h_color and line_top <= draw_y <= line_bottom:
                     pen_h = QPen(h_color)
                     pen_h.setWidth(1)
                     painter.setPen(pen_h)
-                    painter.drawLine(0, draw_y, self.width(), draw_y)
+                    painter.drawLine(int(line_left), draw_y, int(line_right), draw_y)
 
-                if v_color:
+                # Draw vertical crosshair line (constrained to visible area)
+                if v_color and line_left <= draw_x <= line_right:
                     pen_v = QPen(v_color)
                     pen_v.setWidth(1)
                     painter.setPen(pen_v)
-                    painter.drawLine(draw_x, 0, draw_x, self.height())
+                    painter.drawLine(draw_x, int(line_top), draw_x, int(line_bottom))
 
             # Always draw the center point marker
             if 0 <= draw_x <= self.width() and 0 <= draw_y <= self.height():
@@ -615,6 +707,54 @@ class SliceViewLabel(QLabel):
                 text_y = int(center_y - 20)
                 painter.drawText(text_x, text_y, annotation_text)
 
+
+            # Draw Curved MPR points and lines (only if curve tool is active)
+            curve_btn = self.parent_viewer.findChild(QPushButton, "tool_btn_2_0")
+            is_curve_tool_active = curve_btn and curve_btn.isChecked() if curve_btn else False
+            
+            if self.curved_mpr_mode and is_curve_tool_active and self.curve_points:
+                # Get image transformation parameters
+                label_width = self.width()
+                label_height = self.height()
+                
+                if self._original_pixmap and not self._original_pixmap.isNull():
+                    default_scale = self.parent_viewer.mpr_widget.default_scale_factor if hasattr(
+                        self.parent_viewer.mpr_widget, 'default_scale_factor') else 1.0
+                    combined_zoom_factor = default_scale * self.zoom_factor
+                    
+                    original_img_w = self._original_pixmap.width()
+                    original_img_h = self._original_pixmap.height()
+                    
+                    zoomed_width = int(original_img_w * combined_zoom_factor)
+                    zoomed_height = int(original_img_h * combined_zoom_factor)
+                    
+                    center_offset_x = (label_width - zoomed_width) / 2
+                    center_offset_y = (label_height - zoomed_height) / 2
+                    
+                    # Convert normalized points to screen coordinates
+                    screen_points = []
+                    for norm_x, norm_y in self.curve_points:
+                        screen_x = int((norm_x * zoomed_width) + center_offset_x + self.pan_offset_x)
+                        screen_y = int((norm_y * zoomed_height) + center_offset_y + self.pan_offset_y)
+                        screen_points.append((screen_x, screen_y))
+                    
+                    # Draw lines connecting points
+                    if len(screen_points) > 1:
+                        pen = QPen(QColor(0, 255, 255), 2)  # Cyan color
+                        painter.setPen(pen)
+                        for i in range(len(screen_points) - 1):
+                            painter.drawLine(
+                                screen_points[i][0], screen_points[i][1],
+                                screen_points[i+1][0], screen_points[i+1][1]
+                            )
+                    
+                    # Draw points
+                    point_pen = QPen(QColor(255, 255, 0), 2)  # Yellow
+                    painter.setPen(point_pen)
+                    painter.setBrush(QColor(255, 255, 0))
+                    for x, y in screen_points:
+                        painter.drawEllipse(x - 4, y - 4, 8, 8)
+            
             painter.end()
 
     def _apply_zoom_and_pan(self):
@@ -699,6 +839,66 @@ class SliceViewLabel(QLabel):
         self._original_pixmap = pixmap
         self._apply_zoom_and_pan()
 
+    def _get_normalized_position(self, pos):
+        """Convert QPoint position to normalized coordinates (0-1)"""
+        if self._original_pixmap is None or self._original_pixmap.isNull():
+            return 0.5, 0.5
+        
+        label_width = self.width()
+        label_height = self.height()
+        
+        # Get scale factors
+        default_scale = self.parent_viewer.mpr_widget.default_scale_factor if hasattr(
+            self.parent_viewer.mpr_widget, 'default_scale_factor') else 1.0
+        combined_zoom_factor = default_scale * self.zoom_factor
+        
+        original_img_w = self._original_pixmap.width()
+        original_img_h = self._original_pixmap.height()
+        
+        zoomed_width = int(original_img_w * combined_zoom_factor)
+        zoomed_height = int(original_img_h * combined_zoom_factor)
+        
+        center_offset_x = (label_width - zoomed_width) / 2
+        center_offset_y = (label_height - zoomed_height) / 2
+        
+        # Adjust position for pan offset
+        x_on_zoomed_image = pos.x() - center_offset_x - self.pan_offset_x
+        y_on_zoomed_image = pos.y() - center_offset_y - self.pan_offset_y
+        
+        norm_x = x_on_zoomed_image / zoomed_width
+        norm_y = y_on_zoomed_image / zoomed_height
+        
+        return max(0.0, min(1.0, norm_x)), max(0.0, min(1.0, norm_y))
+
+    def _normalized_to_voxel_3d(self, norm_x, norm_y):
+        """Convert normalized 2D coordinates to 3D voxel coordinates based on view type"""
+        dims = self.parent_viewer.mpr_widget.dims
+        if not dims:
+            return (0, 0, 0)
+        
+        if self.view_type == 'axial':
+            # norm_x -> sagittal, norm_y -> coronal
+            voxel_x = int(norm_x * (dims[0] - 1))
+            voxel_y = int(norm_y * (dims[1] - 1))
+            voxel_z = self.parent_viewer.mpr_widget.slices['axial']
+            return (voxel_x, voxel_y, voxel_z)
+        
+        elif self.view_type == 'coronal':
+            # norm_x -> sagittal, norm_y -> axial
+            voxel_x = int(norm_x * (dims[0] - 1))
+            voxel_y = self.parent_viewer.mpr_widget.slices['coronal']
+            voxel_z = int((1 - norm_y) * (dims[2] - 1))
+            return (voxel_x, voxel_y, voxel_z)
+        
+        elif self.view_type == 'sagittal':
+            # norm_x -> coronal, norm_y -> axial
+            voxel_x = self.parent_viewer.mpr_widget.slices['sagittal']
+            voxel_y = int(norm_x * (dims[1] - 1))
+            voxel_z = int((1 - norm_y) * (dims[2] - 1))
+            return (voxel_x, voxel_y, voxel_z)
+        
+        return (0, 0, 0)
+    
     def reset_zoom(self):
         self.zoom_factor = 1.0
         self.pan_offset_x = 0

@@ -106,6 +106,7 @@ class MPRViewer(QMainWindow):
         self.add_image_to_button("tool_btn_1_2", "Icons/video.png", "Cine Mode")
         self.add_image_to_button("export_btn_0", "Icons/NII.png", "NIFTI Export")
         self.add_image_to_button("export_btn_1", "Icons/DIC.png", "DICOM Export")
+        self.add_image_to_button("tool_btn_2_0", "Icons/curve.png", "Curved MPR")
 
         default_tool = self.findChild(QPushButton, "tool_btn_0_0")
         if default_tool:
@@ -373,7 +374,7 @@ class MPRViewer(QMainWindow):
 
         self.tools_group_buttons = QButtonGroup(self)
         self.tools_group_buttons.setExclusive(True)
-        for r in range(2):
+        for r in range(3):
             for c in range(3):
                 btn = QPushButton()
                 btn.setFixedSize(40, 40)
@@ -384,6 +385,10 @@ class MPRViewer(QMainWindow):
                 if object_name == "tool_btn_1_0":
                     btn.setCheckable(False)
                     btn.clicked.connect(self.show_slice_crop_dialog)
+                elif object_name == "tool_btn_2_0":  # NEW: Curved MPR button
+                    btn.setCheckable(True)
+                    btn.clicked.connect(self.mpr_widget.toggle_curved_mpr_mode)
+                    self.tools_group_buttons.addButton(btn, r * 3 + c)
                 else:
                     btn.setCheckable(True)
                     self.tools_group_buttons.addButton(btn, r * 3 + c)
@@ -711,7 +716,17 @@ class MPRViewer(QMainWindow):
             return
 
         btn_name = checked_btn.objectName()
-
+        if btn_name == "tool_btn_2_0":  # Curved MPR
+        # Reset curved MPR
+            self.mpr_widget.curved_mpr_mode = False
+            self.mpr_widget.curved_mpr_points = []
+            self.mpr_widget.curved_mpr_points_3d = []
+            self.mpr_widget.curve_confirmed = False
+            for label in self.mpr_widget.view_labels.values():
+                if isinstance(label, SliceViewLabel):
+                    label.curved_mpr_mode = False
+                    label.curve_points = []
+        
         if btn_name == "tool_btn_0_0":
             self.mpr_widget.reset_crosshair_and_slices()
         elif btn_name == "tool_btn_0_1":

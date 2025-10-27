@@ -27,7 +27,7 @@ class MPRWidget(QWidget):
         self.dims = None
         self.affine = None
 
-        self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0)}
+        self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0), 'curved': (0, 0)}
 
         # Crop bounds (normalized 0-1 coordinates)
         self.segmentation_visible = False  # Whether to show segmentation overlays
@@ -71,6 +71,13 @@ class MPRWidget(QWidget):
         # Set initial view
         self.show_main_views_initially()
 
+        # Curved MPR properties
+        self.curved_mpr_mode = False
+        self.curved_mpr_points = []  # Store points as (view_type, norm_x, norm_y)
+        self.curved_mpr_points_3d = []  # Converted to 3D voxel coordinates
+        self.drawing_curve = False
+        self.curve_confirmed = False
+
     def set_data(self, data, affine, dims, intensity_min, intensity_max):
         """Called by main window when new data is loaded."""
         # We access data directly from main_window, but store local copies of metadata
@@ -104,7 +111,7 @@ class MPRWidget(QWidget):
         This should be called once after a file is loaded.
         """
         if self.dims is None or self.affine is None:
-            self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0)}
+            self.pixel_dims = {'axial': (0, 0), 'coronal': (0, 0), 'sagittal': (0, 0), 'curved': (0, 0)}
             return
 
         x_spacing = self.affine[0, 0]
@@ -319,10 +326,14 @@ class MPRWidget(QWidget):
         min_scale = float('inf')
 
         views_to_check = []
-        if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
+        if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled or self.curved_view_enabled:
             views_to_check.extend(['coronal', 'sagittal', 'axial'])
         if self.oblique_view_enabled:
             views_to_check.append('oblique')
+        
+        # Explicitly exclude curved view from scale calculations
+        if self.curved_view_enabled:
+            views_to_check = [v for v in views_to_check if v != 'curved']
 
         for view_name in views_to_check:
             label = self.view_labels.get(view_name)
@@ -340,11 +351,15 @@ class MPRWidget(QWidget):
                 current_scale = min(scale_w, scale_h)
                 min_scale = min(min_scale, current_scale)
 
-        self.default_scale_factor = min_scale
+        # Ensure we have a valid scale factor (not infinity)
+        if min_scale == float('inf') or min_scale <= 0:
+            self.default_scale_factor = 1.0
+        else:
+            self.default_scale_factor = min_scale
 
     def update_all_views(self):
         views_to_update = []
-        if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
+        if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled or self.curved_view_enabled:
             views_to_update.extend([
                 ('coronal', 'coronal'), ('sagittal', 'sagittal'), ('axial', 'axial')
             ])
@@ -366,19 +381,24 @@ class MPRWidget(QWidget):
             self.main_window.td_widget.update_slice_positions(self.slices)
 
     def update_view(self, ui_title: str, view_type: str, sync_crosshair=False):
+        # Handle special views first (before any file_loaded checks)
+        # Check ui_title first as it's more reliable
+        if ui_title == 'segmentation' or view_type == 'segmentation':
+            if ui_title in self.view_labels and self.view_labels[ui_title].isVisible():
+                self.update_segmentation_view()
+            return
+        
+        if ui_title == 'curved' or view_type == 'curved':
+            if ui_title in self.view_labels and self.view_labels[ui_title].isVisible():
+                self.update_curved_view()
+            return
+        
         if ui_title not in self.view_labels:
             return
         label = self.view_labels[ui_title]
         if not label.isVisible():
             return
         if not self.main_window.file_loaded or self.main_window.data is None:
-            return
-
-        if view_type == 'segmentation':
-            self.update_segmentation_view()
-            return
-        elif view_type == 'curved':
-            self.update_curved_view()
             return
 
         slice_data = loader.get_slice_data(
@@ -507,10 +527,32 @@ class MPRWidget(QWidget):
             return
         label = self.view_labels['curved']
 
-        # For now, display a placeholder
-        # You'll implement the actual curved MPR logic here later
-        label.setText("Curved View\n\n[Curved MPR functionality coming soon]")
-        label.setStyleSheet("color: #C864FF; font-size: 18px;")  # Purple text
+        # Check if we have a curved MPR image to display
+        if hasattr(self, 'curved_mpr_image') and self.curved_mpr_image is not None:
+            from PyQt5.QtGui import QPixmap, QImage
+            from PyQt5.QtCore import Qt
+            
+            h, w = self.curved_mpr_image.shape
+            q_img = QImage(self.curved_mpr_image.tobytes(), w, h, w, QImage.Format_Grayscale8)
+            pixmap = QPixmap.fromImage(q_img)
+            
+            if isinstance(label, SliceViewLabel):
+                label.set_image_pixmap(pixmap)
+                label.setText("")  # Clear any text
+                label.setStyleSheet("")  # Clear any placeholder styling
+            else:
+                scaled = pixmap.scaled(label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                label.setPixmap(scaled)
+                label.setText("")  # Clear any text
+                label.setStyleSheet("")  # Clear any placeholder styling
+        else:
+            # Display a placeholder - clear any existing pixmap first
+            if isinstance(label, SliceViewLabel):
+                # Clear the internal pixmap to prevent zoom/pan operations on invalid data
+                label._original_pixmap = None
+                label.clear()
+            label.setText("Curved View\n\n[Left-click: add point | Right-click: remove last | Double-click: confirm]")
+            label.setStyleSheet("color: #C864FF; font-size: 16px;")  # Purple text
 
     def on_segmentation_view_changed(self, view_name):
         """Callback when the segmentation view dropdown changes."""
@@ -531,7 +573,7 @@ class MPRWidget(QWidget):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Resize:
-            if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled:
+            if self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled or self.curved_view_enabled:
                 if not hasattr(self, '_resize_timer'):
                     self._resize_timer = QTimer()
                     self._resize_timer.setSingleShot(True)
@@ -609,7 +651,7 @@ class MPRWidget(QWidget):
         return QPixmap.fromImage(image)
 
     def maximize_view(self, view_name):
-        if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled):
+        if not (self.main_views_enabled or self.oblique_view_enabled or self.segmentation_view_enabled or self.curved_view_enabled):
             return
 
         self.maximized_view = view_name
@@ -742,6 +784,10 @@ class MPRWidget(QWidget):
             self.toggle_main_views(True)
             return
         self.restore_views()
+        
+        # Save the current scale factor before switching to curved view
+        saved_scale_factor = self.default_scale_factor
+        
         self.curved_view_enabled = True
         self.main_views_enabled = False
         self.oblique_view_enabled = False
@@ -758,4 +804,246 @@ class MPRWidget(QWidget):
                     self.viewing_grid.addWidget(panel, 1, 1)
             else:
                 panel.hide()
-        self.update_visible_views()
+        
+        # Restore the saved scale factor to prevent views from being compressed
+        self.default_scale_factor = saved_scale_factor
+        
+        # Update views individually without recalculating scale
+        for view_name in ['coronal', 'sagittal', 'axial']:
+            self.update_view(view_name, view_name, sync_crosshair=True)
+        self.update_curved_view()
+
+    def toggle_curved_mpr_mode(self, checked):
+        """Toggle Curved MPR drawing mode"""
+        # Only allow curve tool to work when curved view is enabled
+        if checked and not self.curved_view_enabled:
+            print("Curved MPR tool can only be used when Curved View is open")
+            # Uncheck the button
+            curve_btn = self.main_window.findChild(QPushButton, "tool_btn_2_0")
+            if curve_btn:
+                curve_btn.setChecked(False)
+            return
+        
+        self.curved_mpr_mode = checked
+        
+        if checked:
+            # Clear previous curve if any
+            self.curved_mpr_points = []
+            self.curved_mpr_points_3d = []
+            self.curve_confirmed = False
+            self.drawing_curve = True
+            
+            # Disable other interactions while in curve mode
+            for label in self.view_labels.values():
+                if isinstance(label, SliceViewLabel):
+                    label.curved_mpr_mode = True
+            
+            print("Curved MPR mode enabled. Left-click to add points, right-click to remove last point, double-click to confirm.")
+        else:
+            # Clean up curve mode
+            self.drawing_curve = False
+            
+            for label in self.view_labels.values():
+                if isinstance(label, SliceViewLabel):
+                    label.curved_mpr_mode = False
+                    label.curve_points = []
+            
+            self.update_all_views()
+            print("Curved MPR mode disabled.")
+
+    def confirm_curved_mpr(self):
+        """Confirm the curve and generate straightened view"""
+        if len(self.curved_mpr_points_3d) < 2:
+            print("Need at least 2 points for a curve")
+            return
+        
+        self.curve_confirmed = True
+        self.drawing_curve = False
+        
+        print(f"Curve confirmed with {len(self.curved_mpr_points_3d)} points")
+        
+        # Generate the straightened view
+        straightened_image = self.generate_curved_mpr_view()
+        
+        if straightened_image is not None:
+            # Store the curved MPR image for display
+            self.curved_mpr_image = straightened_image
+            
+            # Enable curved view panel if not already enabled
+            if not self.curved_view_enabled:
+                self.curved_view_enabled = True
+                self.main_views_enabled = False
+                self.oblique_view_enabled = False
+                self.segmentation_view_enabled = False
+                
+                # Show/hide appropriate panels
+                for view_name, panel in self.view_panels.items():
+                    if view_name in ['coronal', 'sagittal', 'axial', 'curved']:
+                        panel.show()
+                        if view_name == 'curved':
+                            self.viewing_grid.removeWidget(panel)
+                            self.viewing_grid.addWidget(panel, 1, 1)
+                    else:
+                        panel.hide()
+                
+                # Update views individually without recalculating scale (which breaks with curved view)
+                for view_name in ['coronal', 'sagittal', 'axial']:
+                    self.update_view(view_name, view_name, sync_crosshair=True)
+                
+                # Update curved view separately
+                self.update_curved_view()
+            else:
+                # Just update the curved view
+                self.update_curved_view()
+            
+            # Clear the curve points from the drawing views (but keep curve mode active for new curve)
+            self.curved_mpr_points = []
+            self.curved_mpr_points_3d = []
+            self.curve_confirmed = False
+            self.drawing_curve = True
+            
+            # Clear points from view labels but keep them in curve drawing mode
+            for view_name, label in self.view_labels.items():
+                if view_name != 'curved' and isinstance(label, SliceViewLabel) and hasattr(label, 'curve_points'):
+                    label.curve_points = []  # Clear points but keep curved_mpr_mode True
+                    label.update()
+            
+            # Update the main views to clear the curve visualization
+            for view_name in ['coronal', 'sagittal', 'axial']:
+                self.update_view(view_name, view_name, sync_crosshair=True)
+            
+            print("Curved MPR view generated. Ready for new curve - Left-click: add | Right-click: remove last | Double-click: confirm")
+    
+    def generate_curved_mpr_view(self):
+        """Generate the straightened curved MPR view as a frontal projection"""
+        if not self.main_window.file_loaded or len(self.curved_mpr_points_3d) < 2:
+            return None
+        
+        import numpy as np
+        from scipy.interpolate import splprep, splev
+        from scipy.ndimage import map_coordinates
+        
+        points = np.array(self.curved_mpr_points_3d)
+        
+        # Determine which view the curve was primarily drawn on by analyzing point variance
+        # This helps us choose the correct sampling direction for frontal view
+        var_x = np.var(points[:, 0])
+        var_y = np.var(points[:, 1])
+        var_z = np.var(points[:, 2])
+        
+        # Determine the sampling direction based on which plane has least variance
+        # If curve is in XY plane (axial), sample along Z (superior-inferior)
+        # If curve is in XZ plane (coronal), sample along Y (anterior-posterior)
+        # If curve is in YZ plane (sagittal), sample along X (left-right)
+        if var_z < var_x and var_z < var_y:
+            # Curve is primarily in axial plane (XY), sample along Z for frontal view
+            sampling_direction = np.array([0, 0, 1])
+            print("Detected curve in axial plane - generating frontal view along Z-axis")
+        elif var_y < var_x and var_y < var_z:
+            # Curve is primarily in coronal plane (XZ), sample along Y
+            sampling_direction = np.array([0, 1, 0])
+            print("Detected curve in coronal plane - generating frontal view along Y-axis")
+        else:
+            # Curve is primarily in sagittal plane (YZ), sample along X
+            sampling_direction = np.array([1, 0, 0])
+            print("Detected curve in sagittal plane - generating frontal view along X-axis")
+        
+        # Use spline interpolation for smoother curves
+        try:
+            # Calculate total curve length to determine sampling
+            distances = np.sqrt(np.sum(np.diff(points, axis=0)**2, axis=1))
+            total_length = np.sum(distances)
+            
+            # Sample points along the curve based on voxel spacing
+            # Use at least 2 samples per voxel unit for good quality
+            num_samples = max(int(total_length * 2), 200)
+            num_samples = min(num_samples, 1000)  # Cap at 1000 for performance
+            
+            # Fit a B-spline to the curve points
+            tck, u = splprep([points[:, 0], points[:, 1], points[:, 2]], s=0, k=min(3, len(points)-1))
+            
+            # Evaluate the spline at uniform intervals
+            u_fine = np.linspace(0, 1, num_samples)
+            curve_points = np.column_stack(splev(u_fine, tck))
+            
+        except Exception as e:
+            print(f"Spline fitting failed: {e}, falling back to linear interpolation")
+            from scipy.interpolate import interp1d
+            t = np.linspace(0, 1, len(points))
+            num_samples = max(int(len(points) * 10), 200)
+            t_interp = np.linspace(0, 1, num_samples)
+            fx = interp1d(t, points[:, 0], kind='linear')
+            fy = interp1d(t, points[:, 1], kind='linear')
+            fz = interp1d(t, points[:, 2], kind='linear')
+            curve_points = np.column_stack([fx(t_interp), fy(t_interp), fz(t_interp)])
+        
+        # Determine slice thickness based on volume dimensions
+        # Use a reasonable thickness that shows anatomy clearly
+        max_dim = max(self.dims)
+        thickness_voxels = min(max_dim // 2, 200)  # Adaptive thickness for better frontal views
+        
+        # Create the straightened image
+        width = len(curve_points)
+        height = thickness_voxels * 2  # Sample both directions from curve
+        
+        straightened = np.zeros((height, width))
+        
+        # Sample along the fixed direction (frontal view) at each curve point
+        for i, point in enumerate(curve_points):
+            for j in range(height):
+                # Calculate offset along the sampling direction for frontal view
+                offset_distance = (j - height // 2)
+                sample_point = point + sampling_direction * offset_distance
+                
+                # Ensure within bounds
+                if (0 <= sample_point[0] < self.dims[0] and
+                    0 <= sample_point[1] < self.dims[1] and
+                    0 <= sample_point[2] < self.dims[2]):
+                    
+                    # Sample the volume with trilinear interpolation
+                    value = map_coordinates(
+                        self.main_window.data,
+                        [[sample_point[0]], [sample_point[1]], [sample_point[2]]],
+                        order=1,
+                        mode='constant',
+                        cval=0
+                    )
+                    straightened[j, i] = value[0]
+        
+        # Apply window/level
+        straightened = np.clip(straightened, self.main_window.intensity_min, 
+                            self.main_window.intensity_max)
+        
+        # Normalize to 0-255
+        intensity_range = self.main_window.intensity_max - self.main_window.intensity_min
+        if intensity_range > 0:
+            straightened = 255 * (straightened - self.main_window.intensity_min) / intensity_range
+        else:
+            straightened = np.zeros_like(straightened)
+        
+        # Store the curved view dimensions for proper scaling
+        self.pixel_dims['curved'] = (width, height)
+        
+        print(f"Generated curved MPR frontal view: {width}x{height} pixels from {len(points)} control points")
+        return straightened.astype(np.uint8)
+
+    def show_curved_mpr_result(self, image):
+        """Display the curved MPR result"""
+        # For MVP, show in a simple way - replace one of the views temporarily
+        # Let's use the oblique view area
+        
+        from PyQt5.QtGui import QPixmap, QImage
+        
+        h, w = image.shape
+        q_img = QImage(image.tobytes(), w, h, w, QImage.Format_Grayscale8)
+        pixmap = QPixmap.fromImage(q_img)
+        
+        # Find a view to display it - for MVP, let's create a simple message
+        print(f"Curved MPR generated: {w}x{h} pixels")
+        
+        # You could show it in the oblique view or create a popup
+        # For now, let's just update the axial view as a test
+        if 'axial' in self.view_labels:
+            label = self.view_labels['axial']
+            scaled = pixmap.scaled(label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            label.setPixmap(scaled)
