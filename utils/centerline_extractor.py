@@ -276,8 +276,9 @@ def extract_centerline(mesh, resolution=100, smooth=True):
 
 def compute_camera_positions(centerline_points, look_ahead_distance=10.0, up_vector=None):
     """
-    Compute camera positions and orientations along a centerline.
+    Compute camera positions and orientations along a centerline with stable up vectors.
     Camera is positioned ON the centerline, looking forward along the path.
+    Uses parallel transport to maintain smooth camera orientation without flips.
 
     Parameters:
     -----------
@@ -286,7 +287,7 @@ def compute_camera_positions(centerline_points, look_ahead_distance=10.0, up_vec
     look_ahead_distance : float
         Distance ahead to look (in terms of number of points)
     up_vector : np.ndarray or None
-        Global up vector for camera orientation (default: [0, 0, 1])
+        Initial up vector for camera orientation (default: [0, 0, 1])
 
     Returns:
     --------
@@ -301,39 +302,56 @@ def compute_camera_positions(centerline_points, look_ahead_distance=10.0, up_vec
 
     camera_positions = []
 
+    # Initialize previous up vector for continuity
+    prev_up = up_vector.copy()
+
     for i in range(len(centerline_points)):
         # Camera is positioned exactly on the centerline
         camera_pos = centerline_points[i]
 
         # Look ahead along the path to determine focal point
-        # Use a point further ahead for smoother camera movement
         look_ahead_idx = min(i + int(look_ahead_distance), len(centerline_points) - 1)
         focal_point = centerline_points[look_ahead_idx]
 
-        # Compute tangent for up vector correction if needed
+        # Compute forward direction (tangent)
         if i < len(centerline_points) - 1:
-            tangent = centerline_points[i + 1] - centerline_points[i]
+            forward = centerline_points[i + 1] - centerline_points[i]
         else:
-            tangent = centerline_points[i] - centerline_points[i - 1]
+            forward = centerline_points[i] - centerline_points[i - 1]
 
-        tangent_norm = np.linalg.norm(tangent)
-        if tangent_norm > 1e-10:
-            tangent = tangent / tangent_norm
+        forward_norm = np.linalg.norm(forward)
+        if forward_norm < 1e-10:
+            # Degenerate case, use previous up
+            camera_up = prev_up
+        else:
+            forward = forward / forward_norm
 
-            # Compute right vector by crossing tangent with up
-            right = np.cross(tangent, up_vector)
-            right_norm = np.linalg.norm(right)
+            # Use parallel transport to maintain smooth up vector
+            # Project previous up onto plane perpendicular to forward
+            up_component_along_forward = np.dot(prev_up, forward)
+            camera_up = prev_up - up_component_along_forward * forward
 
-            if right_norm > 1e-10:
-                right = right / right_norm
-                # Recompute up vector to be perpendicular to both
-                camera_up = np.cross(right, tangent)
-                camera_up = camera_up / (np.linalg.norm(camera_up) + 1e-10)
+            # Normalize
+            camera_up_norm = np.linalg.norm(camera_up)
+
+            if camera_up_norm < 1e-10:
+                # Previous up was parallel to forward, need to reinitialize
+                # Find a perpendicular direction
+                if abs(forward[2]) < 0.9:
+                    # Use world up if forward is mostly horizontal
+                    temp_up = np.array([0, 0, 1])
+                else:
+                    # Use world forward if forward is mostly vertical
+                    temp_up = np.array([1, 0, 0])
+
+                # Make perpendicular to forward
+                temp_up = temp_up - np.dot(temp_up, forward) * forward
+                camera_up = temp_up / (np.linalg.norm(temp_up) + 1e-10)
             else:
-                # Tangent is parallel to up vector, use default
-                camera_up = up_vector
-        else:
-            camera_up = up_vector
+                camera_up = camera_up / camera_up_norm
+
+            # Store for next iteration
+            prev_up = camera_up
 
         camera_positions.append({
             'position': camera_pos,
@@ -342,3 +360,46 @@ def compute_camera_positions(centerline_points, look_ahead_distance=10.0, up_vec
         })
 
     return camera_positions
+
+
+def estimate_vessel_radius(mesh, centerline_points, sample_points=10):
+    """
+    Estimate the radius of a vessel along its centerline.
+
+    Parameters:
+    -----------
+    mesh : pv.PolyData
+        The vessel mesh
+    centerline_points : np.ndarray
+        Nx3 array of centerline points
+    sample_points : int
+        Number of points to sample along centerline for radius estimation
+
+    Returns:
+    --------
+    radius : float
+        Estimated average radius of the vessel
+    """
+    if len(centerline_points) < 2 or mesh.n_points == 0:
+        return 5.0  # Default radius
+
+    # Sample points evenly along centerline
+    indices = np.linspace(0, len(centerline_points) - 1, min(sample_points, len(centerline_points)), dtype=int)
+    sampled_points = centerline_points[indices]
+
+    # For each sampled point, find nearest mesh point
+    from scipy.spatial import cKDTree
+    mesh_points = mesh.points
+    tree = cKDTree(mesh_points)
+
+    radii = []
+    for center_point in sampled_points:
+        # Find distance to nearest surface point
+        distance, _ = tree.query(center_point)
+        radii.append(distance)
+
+    # Return median radius (more robust than mean)
+    median_radius = np.median(radii) if radii else 5.0
+
+    # Clamp to reasonable range
+    return max(1.0, min(median_radius, 20.0))

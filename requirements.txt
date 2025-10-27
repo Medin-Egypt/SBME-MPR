@@ -5,6 +5,7 @@ PyQt5
 pydicom
 nibabel
 numpy
+scipy
 Tensorflow
 pyvistaqt
 pathlib

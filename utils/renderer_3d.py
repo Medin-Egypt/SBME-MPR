@@ -8,10 +8,10 @@ import json
 import gc
 import collections
 from .segmentation_cache import SegmentationCache
-from .centerline_extractor import extract_centerline, compute_camera_positions
+from .centerline_extractor import extract_centerline, compute_camera_positions, estimate_vessel_radius
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton, QProgressDialog, QComboBox
+    QSlider, QCheckBox, QGroupBox, QScrollArea, QPushButton, QProgressDialog, QComboBox, QSpinBox
 )
 from PyQt5.QtCore import Qt, QCoreApplication, QThread, pyqtSignal, QTimer
 
@@ -134,7 +134,7 @@ def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=50, decima
     # Optional smoothing (reduced iterations for performance)
     if smoothing:
         try:
-            mesh = mesh.smooth(n_iter=smoothing_iterations, relaxation_factor=0.1)
+            mesh = mesh.smooth(n_iter=smoothing_iterations, relaxation_factor=0.25)
         except Exception as e:
             print(f"  Warning: Smoothing failed. {e}")
 
@@ -151,23 +151,16 @@ def categorize_structures(filenames):
     """
     systems = collections.defaultdict(list)
 
-    skeletal_limbs_keywords = ['humerus', 'scapula', 'clavicula', 'femur', 'hip', 'skull']
+    # --- Keyword Definitions ---
+    skeletal_limbs_keywords = ['humerus', 'scapula', 'clavicula', 'femur', 'hip']
+    skeletal_skull_keywords = ['skull', 'jawbone']
     muscular_keywords = ['gluteus', 'autochthon', 'iliopsoas', 'muscle']
 
     # --- MERGED Brain Part list ---
-    # These base names will catch 'Left_frontal_lobe', 'Right_frontal_lobe', etc.
     brain_parts_list = [
-        "frontal_lobe",
-        "parietal_lobe",
-        "temporal_lobe",
-        "occipital_lobe",
-        "limbic_lobe",
-        "insular_lobe",
-        "cerebellum",
-        "cerebrum",
-        # Unpaired parts remain the same
-        "Brainstem",
-        "Vermis"
+        "frontal_lobe", "parietal_lobe", "temporal_lobe", "occipital_lobe",
+        "limbic_lobe", "insular_lobe", "cerebellum", "cerebrum",
+        "Brainstem", "Vermis"
     ]
     # --- End Definitions ---
 
@@ -185,6 +178,8 @@ def categorize_structures(filenames):
             systems['Skeletal - Ribs'].append(fname)
         elif any(bone in name_lower for bone in skeletal_limbs_keywords):
             systems['Skeletal - Limbs'].append(fname)
+        elif any(bone in name_lower for bone in skeletal_skull_keywords):
+            systems['Skeletal - Skull'].append(fname)
         elif any(muscle in name_lower for muscle in muscular_keywords):
             systems['Muscular'].append(fname)
         elif 'artery' in name_lower or 'aorta' in name_lower or 'trunk' in name_lower:
@@ -194,22 +189,30 @@ def categorize_structures(filenames):
         elif 'heart' in name_lower:
             systems['Cardiovascular - Heart'].append(fname)
 
-        # --- Specific Categories (Checked Second) ---
+        # --- Dental & Cranial Categories ---
+        # Check for 'pulp' first, as it's more specific
+        elif 'pulp' in name_lower:
+            systems['Dental - Pulp'].append(fname)
+        # 'fdi' is a good indicator of a tooth segmentation
+        elif 'fdi' in name_lower:
+            systems['Dental - Teeth'].append(fname)
+        elif 'alveolar_canal' in name_lower:
+            systems['Dental - Nerves'].append(fname)
+        elif 'maxillary_sinus' in name_lower:
+            systems['Cranial - Sinuses'].append(fname)
+        elif 'pharynx' in name_lower:
+            systems['Digestive/Respiratory'].append(fname)
+
+        # --- Specific Brain Categories (Checked Last) ---
         else:
             categorized = False
             # Loop through the specific brain parts
             for part_name in brain_parts_list:
-                # Check if the base part name (e.g., "frontal_lobe")
-                # is in the lowercase filename
                 if part_name.lower() in name_lower:
-                    # Create a merged category
-                    # e.g., "Nervous System - frontal_lobe"
                     systems[f'Nervous System - {part_name}'].append(fname)
                     categorized = True
-                    # Found its category, break the inner loop
-                    break
+                    break # Found its category
 
-                    # If it wasn't a broad category and not a specific brain part
             if not categorized:
                 systems['Other'].append(fname)
 
@@ -217,6 +220,68 @@ def categorize_structures(filenames):
     systems = {k: v for k, v in systems.items() if v}
 
     return systems
+
+
+class BloodFlowWorker(QThread):
+    """
+    Worker thread for computing vessel centerlines in the background.
+    Prevents UI freezing during blood flow initialization.
+    """
+    # Signals
+    progress = pyqtSignal(str, int, int)  # (message, current, total)
+    centerline_computed = pyqtSignal(str, object, float)  # (mesh_name, centerline_points, radius)
+    finished = pyqtSignal(int)  # (vessel_count)
+    error = pyqtSignal(str, str)  # (mesh_name, error_message)
+
+    def __init__(self, vessel_data):
+        """
+        Parameters:
+        -----------
+        vessel_data : list of tuples
+            List of (mesh_name, actor) for vessels to process
+        """
+        super().__init__()
+        self.vessel_data = vessel_data
+        self._cancelled = False
+
+    def cancel(self):
+        """Cancel the computation."""
+        self._cancelled = True
+
+    def run(self):
+        """Compute centerlines for all vessels."""
+        total = len(self.vessel_data)
+        vessel_count = 0
+
+        for idx, (mesh_name, actor) in enumerate(self.vessel_data):
+            if self._cancelled:
+                break
+
+            self.progress.emit(f"Computing centerline for {mesh_name}...", idx, total)
+
+            try:
+                # Get mesh from actor
+                mapper = actor.GetMapper()
+                mesh = mapper.GetInput()
+                pv_mesh = pv.wrap(mesh)
+
+                # Extract centerline
+                centerline_points = extract_centerline(pv_mesh, resolution=50, smooth=True)
+
+                if len(centerline_points) > 10:
+                    # Estimate vessel radius
+                    radius = estimate_vessel_radius(pv_mesh, centerline_points, sample_points=10)
+
+                    # Emit result
+                    self.centerline_computed.emit(mesh_name, centerline_points, radius)
+                    vessel_count += 1
+                else:
+                    self.error.emit(mesh_name, "Centerline too short")
+
+            except Exception as e:
+                self.error.emit(mesh_name, str(e))
+
+        self.finished.emit(vessel_count)
 
 
 class MeshLoadWorker(QThread):
@@ -376,7 +441,7 @@ class MeshLoadWorker(QThread):
 
                     # Smooth mesh
                     try:
-                        mesh = mesh.smooth(n_iter=20, relaxation_factor=0.1)
+                        mesh = mesh.smooth(n_iter=50, relaxation_factor=0.25)
                     except Exception as e:
                         print(f"  Warning: Smoothing failed for {filename}. {e}")
 
@@ -497,6 +562,19 @@ class SegmentationViewer3D(QWidget):
         self.centerline_points = None  # Stored centerline points for recomputing camera path
         self.look_ahead_distance = 10  # Look ahead distance in number of points
 
+        # Blood flow visualization properties
+        self.blood_flow_active = False
+        self.heart_rate = 60  # BPM (beats per minute)
+        self.blood_flow_timer = QTimer()
+        self.blood_flow_timer.timeout.connect(self._update_blood_flow)
+        self.flow_phase = 0.0  # Current phase of the cardiac cycle (0.0 to 1.0)
+        self.vessel_centerlines = {}  # Store centerlines for each vessel {mesh_name: points}
+        self.vessel_radii = {}  # Store estimated radii for each vessel {mesh_name: radius}
+        self.vessel_flow_rings = {}  # Store ring actors for each vessel {mesh_name: [ring_actors]}
+        self.vessel_ring_positions = {}  # Store ring positions {mesh_name: [position_indices]}
+        self.num_rings_per_vessel = 5  # Number of rings traveling down each vessel (increased for better visual)
+        self.blood_flow_worker = None  # Worker thread for computing centerlines
+
         # Create UI
         self.setup_ui()
 
@@ -537,6 +615,10 @@ class SegmentationViewer3D(QWidget):
         # Walkthrough controls group
         self.walkthrough_controls_group = self.create_walkthrough_controls()
         controls_layout.addWidget(self.walkthrough_controls_group)
+
+        # Blood flow controls group
+        self.blood_flow_controls_group = self.create_blood_flow_controls()
+        controls_layout.addWidget(self.blood_flow_controls_group)
 
         # Scroll area for systems
         scroll = QScrollArea()
@@ -703,6 +785,41 @@ class SegmentationViewer3D(QWidget):
 
         # Connect mesh selector change
         self.mesh_selector.currentIndexChanged.connect(self._on_mesh_selected)
+
+        group.setLayout(layout)
+        return group
+
+    def create_blood_flow_controls(self):
+        """Create blood flow visualization controls"""
+        group = QGroupBox("Blood Flow Visualization")
+
+        layout = QVBoxLayout()
+
+        # Heart rate input
+        hr_layout = QHBoxLayout()
+        hr_label = QLabel("Heart Rate (BPM):")
+        hr_layout.addWidget(hr_label)
+
+        self.heart_rate_spinbox = QSpinBox()
+        self.heart_rate_spinbox.setMinimum(40)
+        self.heart_rate_spinbox.setMaximum(200)
+        self.heart_rate_spinbox.setValue(60)
+        self.heart_rate_spinbox.setSuffix(" BPM")
+        self.heart_rate_spinbox.valueChanged.connect(self._on_heart_rate_changed)
+        hr_layout.addWidget(self.heart_rate_spinbox)
+
+        layout.addLayout(hr_layout)
+
+        # Start/Stop button
+        self.blood_flow_btn = QPushButton("▶ Start Blood Flow")
+        self.blood_flow_btn.clicked.connect(self._toggle_blood_flow)
+        layout.addWidget(self.blood_flow_btn)
+
+        # Info label
+        info_label = QLabel("Visualizes blood flow with\nanimated rings in vessels")
+        info_label.setStyleSheet("color: #888; font-size: 10px;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
 
         group.setLayout(layout)
         return group
@@ -1212,8 +1329,9 @@ class SegmentationViewer3D(QWidget):
             self.controls_title_label.setText("Plane Controls")
             self.slice_controls_group.show()
             self.systems_scroll_area.hide()
-            # Hide walkthrough controls in planes mode
+            # Hide walkthrough and blood flow controls in planes mode
             self.walkthrough_controls_group.hide()
+            self.blood_flow_controls_group.hide()
         else:
             # Show segmentation actors that were visible
             for nifti_file in self.nifti_files:
@@ -1230,8 +1348,9 @@ class SegmentationViewer3D(QWidget):
             self.controls_title_label.setText("Anatomical Systems")
             self.slice_controls_group.hide()
             self.systems_scroll_area.show()
-            # Show walkthrough controls in surface mode
+            # Show walkthrough and blood flow controls in surface mode
             self.walkthrough_controls_group.show()
+            self.blood_flow_controls_group.show()
 
         self.plotter.render()
 
@@ -1349,15 +1468,64 @@ class SegmentationViewer3D(QWidget):
 
     # ========== Centerline Walkthrough Methods ==========
 
+    def _is_flythrough_compatible(self, mesh_name):
+        """
+        Check if a mesh is suitable for fly-through navigation.
+        Only tubular/vessel-like structures make sense for centerline fly-through.
+
+        Parameters:
+        -----------
+        mesh_name : str
+            The name of the mesh (filename stem)
+
+        Returns:
+        --------
+        bool
+            True if the mesh is suitable for fly-through, False otherwise
+        """
+        name_lower = mesh_name.lower()
+
+        # Tubular structures that make sense for fly-through
+        flythrough_keywords = [
+            'aorta',
+            'artery',
+            'vein',
+            'vena',
+            'vessel',
+            'trunk',  # brachiocephalic trunk
+            'coronary',
+            'pulmonary_artery',
+            'pulmonary_vein',
+            'portal',
+            'splenic'
+        ]
+
+        # Check if mesh name contains any flythrough-compatible keywords
+        return any(keyword in name_lower for keyword in flythrough_keywords)
+
     def _update_mesh_selector(self):
-        """Update the mesh selector dropdown with loaded meshes"""
+        """Update the mesh selector dropdown with loaded meshes (filtered for fly-through compatibility)"""
         self.mesh_selector.clear()
         self.mesh_selector.addItem("-- Select a mesh --")
 
+        # Only add meshes that are compatible with fly-through
+        compatible_meshes = []
         for mesh_name in sorted(self.actors.keys()):
+            if self._is_flythrough_compatible(mesh_name):
+                compatible_meshes.append(mesh_name)
+
+        # Add compatible meshes to selector
+        for mesh_name in compatible_meshes:
             # Remove .nii or .nii.gz extension from display name
             display_name = mesh_name.replace('.nii.gz', '').replace('.nii', '')
             self.mesh_selector.addItem(display_name, mesh_name)  # Store original as data
+
+        if len(compatible_meshes) == 0:
+            # Show message if no compatible meshes loaded
+            self.mesh_selector.addItem("(No vessel meshes loaded)")
+            self.mesh_selector.setEnabled(False)
+        else:
+            self.mesh_selector.setEnabled(True)
 
     def _on_mesh_selected(self, index):
         """Handle mesh selection change"""
@@ -1578,3 +1746,366 @@ class SegmentationViewer3D(QWidget):
         if len(self.camera_path) > 0:
             percentage = int((self.current_path_index / len(self.camera_path)) * 100)
             self.progress_value_label.setText(f"{percentage}%")
+
+    # ========== Blood Flow Visualization Methods ==========
+
+    def _is_artery(self, mesh_name):
+        """Check if a mesh is an artery"""
+        name_lower = mesh_name.lower()
+        artery_keywords = ['aorta', 'artery', 'arterial', 'trunk', 'coronary']
+        return any(keyword in name_lower for keyword in artery_keywords)
+
+    def _is_vein(self, mesh_name):
+        """Check if a mesh is a vein"""
+        name_lower = mesh_name.lower()
+        vein_keywords = ['vein', 'vena', 'venous', 'portal', 'splenic']
+        return any(keyword in name_lower for keyword in vein_keywords)
+
+    def _on_heart_rate_changed(self, value):
+        """Handle heart rate changes"""
+        self.heart_rate = value
+        # No need to update timer here, it updates continuously
+
+    def _toggle_blood_flow(self):
+        """Toggle blood flow visualization on/off"""
+        if self.blood_flow_active:
+            # Stop blood flow
+            self._stop_blood_flow()
+        else:
+            # Start blood flow
+            self._start_blood_flow()
+
+    def _start_blood_flow(self):
+        """Start the blood flow visualization with moving rings (using background thread)"""
+        print(f"Starting blood flow visualization at {self.heart_rate} BPM...")
+        self.blood_flow_btn.setEnabled(False)
+        self.blood_flow_btn.setText("Computing...")
+
+        # Collect vessel data for processing
+        vessel_data = []
+        for mesh_name, actor in self.actors.items():
+            if actor.GetVisibility() and (self._is_artery(mesh_name) or self._is_vein(mesh_name)):
+                vessel_data.append((mesh_name, actor))
+
+        if len(vessel_data) == 0:
+            print("No visible vessels found for blood flow visualization")
+            self.blood_flow_btn.setText("▶ Start Blood Flow")
+            self.blood_flow_btn.setEnabled(True)
+            return
+
+        # Create progress dialog
+        self.blood_flow_progress_dialog = QProgressDialog(
+            "Computing vessel centerlines...",
+            "Cancel",
+            0,
+            len(vessel_data),
+            self
+        )
+        self.blood_flow_progress_dialog.setWindowTitle("Blood Flow Initialization")
+        self.blood_flow_progress_dialog.setWindowModality(Qt.WindowModal)
+        self.blood_flow_progress_dialog.setMinimumDuration(0)
+        self.blood_flow_progress_dialog.setValue(0)
+
+        # Create worker thread
+        self.blood_flow_worker = BloodFlowWorker(vessel_data)
+
+        # Connect signals
+        self.blood_flow_worker.progress.connect(self._on_blood_flow_progress)
+        self.blood_flow_worker.centerline_computed.connect(self._on_centerline_computed)
+        self.blood_flow_worker.finished.connect(self._on_blood_flow_finished)
+        self.blood_flow_worker.error.connect(self._on_blood_flow_error)
+        self.blood_flow_progress_dialog.canceled.connect(self._on_blood_flow_cancelled)
+
+        # Start worker
+        self.blood_flow_worker.start()
+
+    def _on_blood_flow_progress(self, message, current, total):
+        """Handle blood flow computation progress updates"""
+        if self.blood_flow_progress_dialog:
+            self.blood_flow_progress_dialog.setLabelText(message)
+            self.blood_flow_progress_dialog.setValue(current)
+
+    def _on_centerline_computed(self, mesh_name, centerline_points, radius):
+        """Handle computed centerline result"""
+        # Store centerline and radius
+        self.vessel_centerlines[mesh_name] = centerline_points
+        self.vessel_radii[mesh_name] = radius
+
+        # Initialize ring positions evenly spaced along centerline
+        spacing = len(centerline_points) // self.num_rings_per_vessel
+        if spacing < 1:
+            spacing = 1
+        initial_positions = [i * spacing for i in range(self.num_rings_per_vessel)]
+        self.vessel_ring_positions[mesh_name] = initial_positions
+
+        print(f"  ✓ {mesh_name}: centerline computed (radius: {radius:.1f})")
+
+    def _on_blood_flow_error(self, mesh_name, error_msg):
+        """Handle blood flow computation error"""
+        print(f"  ✗ {mesh_name}: {error_msg}")
+
+    def _on_blood_flow_finished(self, vessel_count):
+        """Handle blood flow computation completion"""
+        if self.blood_flow_progress_dialog:
+            self.blood_flow_progress_dialog.close()
+            self.blood_flow_progress_dialog = None
+
+        # Clean up worker
+        if self.blood_flow_worker:
+            self.blood_flow_worker.deleteLater()
+            self.blood_flow_worker = None
+
+        if vessel_count == 0:
+            print("No vessels processed for blood flow visualization")
+            self.blood_flow_btn.setText("▶ Start Blood Flow")
+            self.blood_flow_btn.setEnabled(True)
+            return
+
+        # Create rings for all vessels
+        print(f"Creating flow rings for {vessel_count} vessels...")
+        for mesh_name in self.vessel_centerlines.keys():
+            if mesh_name in self.actors:
+                self._create_flow_rings(mesh_name, self.actors[mesh_name])
+
+        print(f"Blood flow visualization ready for {vessel_count} vessels")
+
+        # Reset phase
+        self.flow_phase = 0.0
+
+        # Start timer - update at 60 FPS for smooth animation
+        self.blood_flow_timer.start(16)  # ~60 FPS
+
+        # Update button
+        self.blood_flow_active = True
+        self.blood_flow_btn.setText("⏹ Stop Blood Flow")
+        self.blood_flow_btn.setEnabled(True)
+
+    def _on_blood_flow_cancelled(self):
+        """Handle user cancelling blood flow computation"""
+        if self.blood_flow_worker:
+            print("Cancelling blood flow computation...")
+            self.blood_flow_worker.cancel()
+            self.blood_flow_worker.wait()
+            self.blood_flow_worker.deleteLater()
+            self.blood_flow_worker = None
+
+        if self.blood_flow_progress_dialog:
+            self.blood_flow_progress_dialog.close()
+            self.blood_flow_progress_dialog = None
+
+        self.blood_flow_btn.setText("▶ Start Blood Flow")
+        self.blood_flow_btn.setEnabled(True)
+        print("Blood flow computation cancelled")
+
+    def _stop_blood_flow(self):
+        """Stop the blood flow visualization and remove ring actors"""
+        self.blood_flow_timer.stop()
+        self.blood_flow_active = False
+        self.blood_flow_btn.setText("▶ Start Blood Flow")
+
+        # Remove all flow ring actors
+        for mesh_name, ring_actors in self.vessel_flow_rings.items():
+            for ring_actor in ring_actors:
+                if ring_actor is not None:
+                    try:
+                        self.plotter.remove_actor(ring_actor)
+                    except:
+                        pass
+
+        # Clear data structures
+        self.vessel_centerlines.clear()
+        self.vessel_radii.clear()
+        self.vessel_flow_rings.clear()
+        self.vessel_ring_positions.clear()
+
+        self.plotter.render()
+        print("Blood flow visualization stopped")
+
+    def _create_ring_mesh_for_vessel(self, vessel_radius):
+        """
+        Create a ring mesh for a specific vessel radius.
+
+        Parameters:
+        -----------
+        vessel_radius : float
+            Radius of the vessel
+
+        Returns:
+        --------
+        mesh : pv.PolyData
+            Ring mesh with appropriate size
+        """
+        # Create circle points in XY plane with vessel-specific radius
+        theta = np.linspace(0, 2*np.pi, 16, endpoint=False)
+
+        circle_x = vessel_radius * np.cos(theta)
+        circle_y = vessel_radius * np.sin(theta)
+        circle_z = np.zeros_like(theta)
+
+        circle_points = np.column_stack([circle_x, circle_y, circle_z])
+
+        # Create polyline
+        lines = np.full((len(theta), 3), 2, dtype=np.int32)
+        lines[:, 1] = np.arange(len(theta))
+        lines[:, 2] = np.roll(np.arange(len(theta)), -1)
+
+        poly = pv.PolyData(circle_points, lines=lines)
+
+        # Apply tube filter with radius proportional to vessel size
+        tube_radius = max(0.3, vessel_radius * 0.15)  # 15% of vessel radius
+        tube = poly.tube(radius=tube_radius, n_sides=6)
+
+        return tube
+
+    def _create_flow_rings(self, mesh_name, vessel_actor):
+        """
+        Create flow ring actors for a vessel with proper sizing.
+
+        Parameters:
+        -----------
+        mesh_name : str
+            Name of the vessel mesh
+        vessel_actor : vtkActor
+            The vessel actor to match color
+        """
+        if mesh_name not in self.vessel_centerlines:
+            return False
+
+        centerline = self.vessel_centerlines[mesh_name]
+        positions = self.vessel_ring_positions[mesh_name]
+
+        # Get vessel-specific radius
+        vessel_radius = self.vessel_radii.get(mesh_name, 5.0)
+
+        # Create ring mesh for this vessel
+        ring_mesh = self._create_ring_mesh_for_vessel(vessel_radius)
+
+        # Determine ring color based on vessel type
+        if self._is_artery(mesh_name):
+            ring_color = [1.0, 0.3, 0.1]  # Bright orange-red
+            ring_opacity = 0.8
+        else:
+            ring_color = [0.2, 0.5, 1.0]  # Bright blue
+            ring_opacity = 0.7
+
+        # Create ring actors using vessel-specific mesh
+        ring_actors = []
+        for pos_idx in positions:
+            if pos_idx < len(centerline):
+                # Add mesh with transform
+                actor = self.plotter.add_mesh(
+                    ring_mesh,
+                    color=ring_color,
+                    opacity=ring_opacity,
+                    lighting=True,
+                    smooth_shading=True
+                )
+
+                # Position will be updated via transform in update loop
+                if actor:
+                    ring_actors.append(actor)
+
+        self.vessel_flow_rings[mesh_name] = ring_actors
+        print(f"    Created {len(ring_actors)} rings for {mesh_name} (radius: {vessel_radius:.1f})")
+        return len(ring_actors) > 0
+
+    def _update_ring_transform(self, actor, centerline, position_idx):
+        """
+        Update ring position using VTK transforms (much faster than recreating geometry).
+
+        Parameters:
+        -----------
+        actor : vtkActor
+            The ring actor to update
+        centerline : np.ndarray
+            Centerline points
+        position_idx : int
+            Position index along centerline
+        """
+        import vtk
+
+        if position_idx >= len(centerline) - 1:
+            return
+
+        # Get position and direction
+        center = centerline[position_idx]
+
+        # Calculate direction vector (tangent)
+        if position_idx < len(centerline) - 1:
+            direction = centerline[position_idx + 1] - centerline[position_idx]
+        else:
+            direction = centerline[position_idx] - centerline[position_idx - 1]
+
+        direction_norm = np.linalg.norm(direction)
+        if direction_norm < 1e-6:
+            return
+        direction = direction / direction_norm
+
+        # Create transform
+        transform = vtk.vtkTransform()
+
+        # Calculate rotation to align Z-axis with direction
+        z_axis = np.array([0, 0, 1])
+        rotation_axis = np.cross(z_axis, direction)
+        rotation_axis_norm = np.linalg.norm(rotation_axis)
+
+        if rotation_axis_norm > 1e-6:
+            rotation_axis = rotation_axis / rotation_axis_norm
+            rotation_angle = np.arccos(np.clip(np.dot(z_axis, direction), -1.0, 1.0))
+            rotation_angle_deg = np.degrees(rotation_angle)
+
+            # Apply rotation and translation
+            transform.Translate(center)
+            transform.RotateWXYZ(rotation_angle_deg, rotation_axis[0], rotation_axis[1], rotation_axis[2])
+        else:
+            transform.Translate(center)
+
+        # Set actor transform
+        actor.SetUserTransform(transform)
+
+    def _update_blood_flow(self):
+        """Update blood flow animation by moving rings along vessels using transforms"""
+        # Update cardiac phase for smooth timing
+        cycle_duration = 60.0 / self.heart_rate
+        phase_increment = 1.0 / (cycle_duration * 60)
+        self.flow_phase += phase_increment
+        if self.flow_phase >= 1.0:
+            self.flow_phase = 0.0
+
+        # Update each vessel's ring positions
+        for mesh_name in list(self.vessel_centerlines.keys()):
+            if mesh_name not in self.vessel_ring_positions:
+                continue
+
+            centerline = self.vessel_centerlines[mesh_name]
+            positions = self.vessel_ring_positions[mesh_name]
+            ring_actors = self.vessel_flow_rings.get(mesh_name, [])
+
+            # Calculate movement speed based on vessel type and heart rate
+            if self._is_artery(mesh_name):
+                # Arteries: pulsatile flow
+                base_speed = self.heart_rate / 60.0 * 2.0
+
+                # Pulsatile component
+                pulse = np.sin(self.flow_phase * 2 * np.pi)
+                speed = base_speed * (1.0 + 0.5 * pulse)  # Vary speed ±50%
+            else:
+                # Veins: steady, slower flow
+                speed = self.heart_rate / 60.0 * 0.8
+
+            # Update ring positions using transforms (fast!)
+            for i in range(len(positions)):
+                positions[i] += speed
+
+                # Wrap around when reaching end
+                if positions[i] >= len(centerline) - 1:
+                    positions[i] = 0
+
+                # Update ring transform (no geometry recreation needed)
+                if i < len(ring_actors) and ring_actors[i] is not None:
+                    pos_idx = int(positions[i])
+                    if pos_idx < len(centerline) - 1:
+                        self._update_ring_transform(ring_actors[i], centerline, pos_idx)
+
+        # Render updated scene
+        self.plotter.render()
