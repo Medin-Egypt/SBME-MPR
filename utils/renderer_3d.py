@@ -561,6 +561,9 @@ class SegmentationViewer3D(QWidget):
         self.centerline_actor = None  # Actor for visualizing centerline
         self.centerline_points = None  # Stored centerline points for recomputing camera path
         self.look_ahead_distance = 10  # Look ahead distance in number of points
+        self.focus_mode_active = False
+        self.focused_mesh_name = None
+        self.hidden_actors_before_focus = {}
 
         # Blood flow visualization properties
         self.blood_flow_active = False
@@ -823,6 +826,224 @@ class SegmentationViewer3D(QWidget):
 
         group.setLayout(layout)
         return group
+
+    def toggle_focus_navigation(self, enabled):
+        """
+        Toggle focus navigation mode.
+        When enabled, clicking on a mesh will hide all other meshes.
+        
+        Parameters:
+        -----------
+        enabled : bool
+            Whether to enable or disable focus navigation mode
+        """
+        if enabled:
+            print("Focus navigation enabled - LEFT-CLICK on any organ to focus")
+            try:
+                # Disable any existing picking first
+                try:
+                    self.plotter.disable_picking()
+                except:
+                    pass
+                
+                # Enable picking in the plotter with error handling
+                self.plotter.enable_mesh_picking(
+                    callback=self._on_mesh_picked,
+                    show_message=False,
+                    use_picker='cell',  # Use cell picker for better accuracy
+                    show=False  # Don't show the picked mesh separately
+                )
+                self.focus_mode_active = True
+            except Exception as e:
+                print(f"Error enabling picking: {e}")
+                self.focus_mode_active = False
+        else:
+            print("Focus navigation disabled")
+            try:
+                # Disable picking
+                self.plotter.disable_picking()
+            except Exception as e:
+                print(f"Error disabling picking: {e}")
+            
+            self.focus_mode_active = False
+            
+            # Restore all hidden meshes if we were in focus mode
+            if self.focused_mesh_name is not None:
+                self._unfocus_all_meshes()
+    
+    def _on_mesh_picked(self, mesh):
+        """
+        Callback when a mesh is picked in focus navigation mode.
+        
+        Parameters:
+        -----------
+        mesh : pv.PolyData or vtk object
+            The picked mesh
+        """
+        if not self.focus_mode_active:
+            return
+        
+        try:
+            # Handle None or invalid mesh
+            if mesh is None:
+                return
+            
+            # Convert to PyVista mesh if needed
+            if not isinstance(mesh, pv.PolyData):
+                try:
+                    mesh = pv.wrap(mesh)
+                except:
+                    return
+            
+            # Find which actor was picked by comparing mesh data
+            picked_mesh_name = None
+            picked_n_points = mesh.GetNumberOfPoints()
+            picked_n_cells = mesh.GetNumberOfCells()
+            
+            for mesh_name, actor in self.actors.items():
+                if not actor.GetVisibility():
+                    continue
+                    
+                try:
+                    mapper = actor.GetMapper()
+                    actor_mesh = mapper.GetInput()
+                    
+                    # Compare both points and cells for better accuracy
+                    if (actor_mesh.GetNumberOfPoints() == picked_n_points and 
+                        actor_mesh.GetNumberOfCells() == picked_n_cells):
+                        picked_mesh_name = mesh_name
+                        break
+                except:
+                    continue
+            
+            if picked_mesh_name is None:
+                print("Could not identify picked mesh")
+                return
+            
+            # If already focused on this mesh, unfocus
+            if self.focused_mesh_name == picked_mesh_name:
+                print(f"Unfocusing from: {picked_mesh_name}")
+                self._unfocus_all_meshes()
+                return
+            
+            # Focus on the picked mesh
+            self._focus_on_mesh(picked_mesh_name)
+            
+        except Exception as e:
+            print(f"Error in mesh picking: {e}")
+            return
+    
+    def _focus_on_mesh(self, mesh_name):
+        """
+        Hide all meshes except the focused one and zoom to fit it.
+        
+        Parameters:
+        -----------
+        mesh_name : str
+            Name of the mesh to focus on
+        """
+        print(f"Focusing on: {mesh_name}")
+        
+        # Store current visibility states before hiding
+        self.hidden_actors_before_focus = {}
+        
+        # Hide all other meshes
+        for name, actor in self.actors.items():
+            # Store previous visibility
+            was_visible = actor.GetVisibility()
+            self.hidden_actors_before_focus[name] = was_visible
+            
+            if name != mesh_name:
+                actor.SetVisibility(False)
+            else:
+                actor.SetVisibility(True)
+        
+        self.focused_mesh_name = mesh_name
+        
+        # Zoom to fit the focused mesh
+        if mesh_name in self.actors:
+            try:
+                # Get the focused actor
+                focused_actor = self.actors[mesh_name]
+                
+                # Get the bounds of the mesh
+                mapper = focused_actor.GetMapper()
+                mesh = mapper.GetInput()
+                
+                # Reset camera to focus on this mesh
+                self.plotter.reset_camera_clipping_range()
+                
+                # Use PyVista's built-in camera positioning for the mesh
+                # Get bounds: [xmin, xmax, ymin, ymax, zmin, zmax]
+                bounds = mesh.GetBounds()
+                
+                # Calculate center of the mesh
+                center = [
+                    (bounds[0] + bounds[1]) / 2,
+                    (bounds[2] + bounds[3]) / 2,
+                    (bounds[4] + bounds[5]) / 2
+                ]
+                
+                # Calculate size of the mesh
+                size = max(
+                    bounds[1] - bounds[0],  # x size
+                    bounds[3] - bounds[2],  # y size
+                    bounds[5] - bounds[4]   # z size
+                )
+                
+                # Set camera position
+                camera = self.plotter.camera
+                
+                # Position camera at a distance proportional to mesh size
+                distance = size * 2.5  # Adjust multiplier for desired zoom level
+                
+                # Set camera to look at the mesh from a nice angle
+                # Position camera at 45 degrees in both horizontal and vertical
+                import numpy as np
+                angle_h = np.radians(45)
+                angle_v = np.radians(30)
+                
+                camera.position = [
+                    center[0] + distance * np.cos(angle_h) * np.cos(angle_v),
+                    center[1] + distance * np.sin(angle_h) * np.cos(angle_v),
+                    center[2] + distance * np.sin(angle_v)
+                ]
+                
+                camera.focal_point = center
+                camera.up = [0, 0, 1]  # Z-axis is up
+                
+                # Reset the camera clipping range to avoid clipping the mesh
+                self.plotter.reset_camera_clipping_range()
+                
+                print(f"Zoomed to fit: {mesh_name}")
+                
+            except Exception as e:
+                print(f"Error zooming to mesh: {e}")
+        
+        self.plotter.render()
+    
+    def _unfocus_all_meshes(self):
+        """
+        Restore visibility of all meshes to their pre-focus state and reset camera.
+        """
+        print("Unfocusing - restoring all meshes")
+        
+        # Restore previous visibility states
+        for name, was_visible in self.hidden_actors_before_focus.items():
+            if name in self.actors:
+                self.actors[name].SetVisibility(was_visible)
+        
+        self.focused_mesh_name = None
+        self.hidden_actors_before_focus = {}
+        
+        # Reset camera to show all visible meshes
+        try:
+            self.plotter.reset_camera()
+            print("Camera reset to show all meshes")
+        except Exception as e:
+            print(f"Error resetting camera: {e}")
+        
+        self.plotter.render()
 
     def on_slice_slider_changed(self, plane_type, value, value_label, slider):
         """Handle slice slider value changes"""

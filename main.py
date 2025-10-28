@@ -331,6 +331,7 @@ class MPRViewer(QMainWindow):
             btn.setToolTip(tooltip)
             td_tools_buttons_layout.addWidget(btn, 0, i)
             self.td_tools_group_buttons.addButton(btn, i)
+            
             # Add icon
             try:
                 icon = QIcon(QPixmap(icon_path))
@@ -339,6 +340,9 @@ class MPRViewer(QMainWindow):
                     btn.setIconSize(QSize(32, 32))
             except Exception:
                 btn.setText(str(i))
+        
+        # Connect the button group's buttonClicked signal to handle tool switching
+        self.td_tools_group_buttons.buttonClicked.connect(self.on_3d_tool_changed)
         
         td_tools_layout.addWidget(td_tools_buttons_widget)
         self.td_tools_group.setLayout(td_tools_layout)
@@ -431,6 +435,24 @@ class MPRViewer(QMainWindow):
 
         layout.addStretch()
         return sidebar
+
+    def on_3d_tool_changed(self, button):
+        """Handle 3D tool button changes"""
+        button_name = button.objectName()
+        is_checked = button.isChecked()
+        
+        # Disable all tools first
+        self.td_widget.toggle_focus_navigation(False)
+        # Add other tool disables here when you implement them
+        
+        # Enable the selected tool
+        if is_checked:
+            if button_name == "td_tool_btn_1":  # Focus Navigation
+                self.td_widget.toggle_focus_navigation(True)
+            elif button_name == "td_tool_btn_0":  # Blockage (future implementation)
+                print("Blockage tool selected (not yet implemented)")
+            elif button_name == "td_tool_btn_2":  # Move Navigation (future implementation)
+                print("Move Navigation tool selected (not yet implemented)")
 
     def show_import_menu(self):
         """Show import options menu"""
