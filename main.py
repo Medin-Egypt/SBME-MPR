@@ -318,9 +318,8 @@ class MPRViewer(QMainWindow):
         
         # Create 3 buttons in a row
         td_tool_configs = [
-            ("td_tool_btn_0", "Icons/blockage.png", "Blockage"),
+            ("td_tool_btn_0", "Icons/blockage.png", "Flythrough Navigation"),
             ("td_tool_btn_1", "Icons/focusnav.png", "Focus Navigation"),
-            ("td_tool_btn_2", "Icons/movenav.png", "Move Navigation")
         ]
         
         for i, (btn_name, icon_path, tooltip) in enumerate(td_tool_configs):
@@ -449,10 +448,8 @@ class MPRViewer(QMainWindow):
         if is_checked:
             if button_name == "td_tool_btn_1":  # Focus Navigation
                 self.td_widget.toggle_focus_navigation(True)
-            elif button_name == "td_tool_btn_0":  # Blockage (future implementation)
-                print("Blockage tool selected (not yet implemented)")
-            elif button_name == "td_tool_btn_2":  # Move Navigation (future implementation)
-                print("Move Navigation tool selected (not yet implemented)")
+            elif button_name == "td_tool_btn_0":  # Flythrough (future implementation)
+                print("Flythrough tool selected (not yet implemented)")
 
     def show_import_menu(self):
         """Show import options menu"""

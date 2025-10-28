@@ -134,7 +134,7 @@ def nifti_to_surface(nifti_path, smoothing=True, smoothing_iterations=50, decima
     # Optional smoothing (reduced iterations for performance)
     if smoothing:
         try:
-            mesh = mesh.smooth(n_iter=smoothing_iterations, relaxation_factor=0.25)
+            mesh = mesh.smooth(n_iter=smoothing_iterations, relaxation_factor=0.15)
         except Exception as e:
             print(f"  Warning: Smoothing failed. {e}")
 
@@ -441,7 +441,7 @@ class MeshLoadWorker(QThread):
 
                     # Smooth mesh
                     try:
-                        mesh = mesh.smooth(n_iter=50, relaxation_factor=0.25)
+                        mesh = mesh.smooth(n_iter=50, relaxation_factor=0.15)
                     except Exception as e:
                         print(f"  Warning: Smoothing failed for {filename}. {e}")
 
@@ -615,7 +615,7 @@ class SegmentationViewer3D(QWidget):
         controls_layout.addWidget(self.slice_controls_group)
         self.slice_controls_group.hide()  # Initially hidden
 
-        # Walkthrough controls group
+        # Flythrough controls group
         self.walkthrough_controls_group = self.create_walkthrough_controls()
         controls_layout.addWidget(self.walkthrough_controls_group)
 
@@ -719,7 +719,7 @@ class SegmentationViewer3D(QWidget):
 
     def create_walkthrough_controls(self):
         """Create centerline walkthrough controls"""
-        group = QGroupBox("Centerline Walkthrough")
+        group = QGroupBox("Flythrough")
 
         layout = QVBoxLayout()
 
@@ -838,7 +838,7 @@ class SegmentationViewer3D(QWidget):
             Whether to enable or disable focus navigation mode
         """
         if enabled:
-            print("Focus navigation enabled - LEFT-CLICK on any organ to focus")
+            print("Focus navigation enabled - RIGHT-CLICK on any organ to focus")
             try:
                 # Disable any existing picking first
                 try:
@@ -1687,7 +1687,7 @@ class SegmentationViewer3D(QWidget):
             if plane_type in slices_dict:
                 self.update_plane_position(plane_type, slices_dict[plane_type])
 
-    # ========== Centerline Walkthrough Methods ==========
+    # ========== Centerline Flythrough Methods ==========
 
     def _is_flythrough_compatible(self, mesh_name):
         """
@@ -1864,13 +1864,13 @@ class SegmentationViewer3D(QWidget):
             self.walkthrough_timer.stop()
             self.walkthrough_active = False
             self.play_pause_btn.setText("▶ Play")
-            print("Walkthrough paused")
+            print("Flythrough paused")
         else:
             # Play
             self.walkthrough_timer.start(self.walkthrough_speed)
             self.walkthrough_active = True
             self.play_pause_btn.setText("⏸ Pause")
-            print("Walkthrough started")
+            print("Flythrough started")
 
     def _stop_walkthrough(self):
         """Stop the walkthrough and reset to start"""
@@ -1883,7 +1883,7 @@ class SegmentationViewer3D(QWidget):
         # Reset camera
         self.plotter.reset_camera()
         self.plotter.render()
-        print("Walkthrough stopped")
+        print("Flythrough stopped")
 
     def _on_speed_changed(self, value):
         """Handle speed slider changes"""
