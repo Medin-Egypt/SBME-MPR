@@ -1296,6 +1296,14 @@ class SegmentationViewer3D(QWidget):
             print("Initializing 3D viewer... No segmentations to load.")
             self.loading_finished.emit()
 
+    def set_background_color(self, is_dark_mode):
+        """Set the plotter background color based on theme"""
+        if is_dark_mode:
+            self.plotter.set_background('black')
+        else:
+            self.plotter.set_background('white')
+        self.plotter.render()
+
     def _on_load_progress(self, message, current, total):
         """Update progress dialog."""
         if self.load_progress_dialog:

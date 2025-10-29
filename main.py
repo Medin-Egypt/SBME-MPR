@@ -37,6 +37,8 @@ class MPRViewer(QMainWindow):
 
         # Remove default title bar
         self.setWindowFlags(Qt.FramelessWindowHint)
+        # Theme state
+        self.is_dark_mode = True  # Default to dark mode
 
         # --- Data Properties (Owned by Main Window) ---
         self.data = None
@@ -213,6 +215,14 @@ class MPRViewer(QMainWindow):
         # Connect tab buttons to switch function
         mpr_tab.clicked.connect(lambda: self.switch_to_tab("mpr"))
         td_tab.clicked.connect(lambda: self.switch_to_tab("3d"))
+        # Add theme switch widget to title bar
+        from utils.theme_switch import ThemeSwitchWidget
+        self.theme_switch = ThemeSwitchWidget()
+        self.theme_switch.theme_changed.connect(self.on_theme_changed)
+        tab_layout.addWidget(self.theme_switch)
+        tab_layout.addSpacing(10)
+
+
         container_layout.addWidget(tab_bar)
 
         return title_bar_container
@@ -448,8 +458,8 @@ class MPRViewer(QMainWindow):
         if is_checked:
             if button_name == "td_tool_btn_1":  # Focus Navigation
                 self.td_widget.toggle_focus_navigation(True)
-            elif button_name == "td_tool_btn_0":  # Flythrough (future implementation)
-                print("Flythrough tool selected (not yet implemented)")
+            elif button_name == "td_tool_btn_0":  # Flythrough
+                print("Flythrough tool selected")
 
     def show_import_menu(self):
         """Show import options menu"""
@@ -618,6 +628,9 @@ class MPRViewer(QMainWindow):
                 self.segmentation_manager.get_file_paths(),
                 self.segmentation_manager
             )
+            # Set 3D viewer background based on current theme
+            if hasattr(self.td_widget, 'viewer_3d') and self.td_widget.viewer_3d is not None:
+                self.td_widget.viewer_3d.set_background_color(self.is_dark_mode)
 
         else:
             # No successful loads - show error immediately
@@ -830,6 +843,28 @@ class MPRViewer(QMainWindow):
             if tip:
                 button.setToolTip(tip)
 
+    def on_theme_changed(self, is_dark):
+        """Handle theme change from switch widget"""
+        self.is_dark_mode = is_dark
+        
+        if self.is_dark_mode:
+            stylesheet_file = "style.qss"
+        else:
+            stylesheet_file = "style_light.qss"
+        
+        # Load and apply stylesheet
+        try:
+            with open(stylesheet_file, "r") as f:
+                style_sheet = f.read()
+                QApplication.instance().setStyleSheet(style_sheet)
+            
+            # Update 3D viewer background
+            if hasattr(self.td_widget, 'viewer_3d') and self.td_widget.viewer_3d is not None:
+                self.td_widget.viewer_3d.set_background_color(self.is_dark_mode)
+            
+            print(f"Switched to {'dark' if self.is_dark_mode else 'light'} mode")
+        except FileNotFoundError:
+            print(f"Warning: {stylesheet_file} file not found.")
 
 def main():
     app = QApplication(sys.argv)

@@ -5,4 +5,4 @@ CTdata/
 *.nii.gz
 .cache/
 utils/__pycache__/
-__pycache__/
+*.pyc
