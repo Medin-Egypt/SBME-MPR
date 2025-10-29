@@ -115,6 +115,10 @@ class MPRViewer(QMainWindow):
             default_tool.setChecked(True)
 
         self.switch_to_tab("mpr")  # Show MPR tab by default
+        # Set surface mode as default in 3D tab
+        surface_btn = self.findChild(QPushButton, "td_mode_btn_0")
+        if surface_btn:
+            surface_btn.setChecked(True)
 
     def create_title_bar(self):
         """Create custom title bar with window controls and tab bar"""
@@ -452,14 +456,14 @@ class MPRViewer(QMainWindow):
         
         # Disable all tools first
         self.td_widget.toggle_focus_navigation(False)
-        # Add other tool disables here when you implement them
+        self.td_widget.toggle_flythrough_navigation(False)
         
         # Enable the selected tool
         if is_checked:
-            if button_name == "td_tool_btn_1":  # Focus Navigation
+            if button_name == "td_tool_btn_0":  # Flythrough Navigation
+                self.td_widget.toggle_flythrough_navigation(True)
+            elif button_name == "td_tool_btn_1":  # Focus Navigation
                 self.td_widget.toggle_focus_navigation(True)
-            elif button_name == "td_tool_btn_0":  # Flythrough
-                print("Flythrough tool selected")
 
     def show_import_menu(self):
         """Show import options menu"""

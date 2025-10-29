@@ -622,6 +622,9 @@ class SegmentationViewer3D(QWidget):
         # Blood flow controls group
         self.blood_flow_controls_group = self.create_blood_flow_controls()
         controls_layout.addWidget(self.blood_flow_controls_group)
+        # Hide flythrough and blood flow controls initially
+        self.walkthrough_controls_group.hide()
+        self.blood_flow_controls_group.hide()
 
         # Scroll area for systems
         scroll = QScrollArea()
@@ -1558,9 +1561,7 @@ class SegmentationViewer3D(QWidget):
             self.controls_title_label.setText("Plane Controls")
             self.slice_controls_group.show()
             self.systems_scroll_area.hide()
-            # Hide walkthrough and blood flow controls in planes mode
-            self.walkthrough_controls_group.hide()
-            self.blood_flow_controls_group.hide()
+
         else:
             # Show segmentation actors that were visible
             for nifti_file in self.nifti_files:
@@ -1577,9 +1578,6 @@ class SegmentationViewer3D(QWidget):
             self.controls_title_label.setText("Anatomical Systems")
             self.slice_controls_group.hide()
             self.systems_scroll_area.show()
-            # Show walkthrough and blood flow controls in surface mode
-            self.walkthrough_controls_group.show()
-            self.blood_flow_controls_group.show()
 
         self.plotter.render()
 

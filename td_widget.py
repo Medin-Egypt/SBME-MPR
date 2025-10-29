@@ -24,7 +24,7 @@ class TDWidget(QWidget):
         self.layout.addWidget(self.placeholder)
 
         # 3D view modes (kept for button connections)
-        self.surface_mode_enabled = False
+        self.surface_mode_enabled = True
         self.planes_mode_enabled = False
 
         # Volume data for plane rendering
@@ -293,26 +293,53 @@ class TDWidget(QWidget):
                 self.layout.addWidget(self.placeholder)
 
     def toggle_focus_navigation(self, checked):
-            """Toggle focus navigation mode in 3D view"""
-            if checked:
-                print("TD Widget: Focus navigation enabled")
-                
-                # Ensure we're in surface mode first
-                if not self.surface_mode_enabled:
-                    from PyQt5.QtWidgets import QPushButton
-                    surface_btn = self.main_window.findChild(QPushButton, "td_mode_btn_0")
-                    if surface_btn:
-                        surface_btn.setChecked(True)
-                    self.toggle_surface_mode(True)
-                
-                # Enable focus navigation in viewer if it exists
-                if self.viewer_3d is not None:
-                    self.viewer_3d.toggle_focus_navigation(True)
-                else:
-                    print("TD Widget: No 3D viewer available")
+        """Toggle focus navigation mode in 3D view"""
+        if checked:
+            print("TD Widget: Focus navigation enabled")
+            
+            # Ensure we're in surface mode first
+            if not self.surface_mode_enabled:
+                from PyQt5.QtWidgets import QPushButton
+                surface_btn = self.main_window.findChild(QPushButton, "td_mode_btn_0")
+                if surface_btn:
+                    surface_btn.setChecked(True)
+                self.toggle_surface_mode(True)
+            
+            # Enable focus navigation in viewer if it exists
+            if self.viewer_3d is not None:
+                self.viewer_3d.toggle_focus_navigation(True)
             else:
-                print("TD Widget: Focus navigation disabled")
-                
-                # Disable focus navigation in viewer if it exists
-                if self.viewer_3d is not None:
-                    self.viewer_3d.toggle_focus_navigation(False)
+                print("TD Widget: No 3D viewer available")
+        else:
+            print("TD Widget: Focus navigation disabled")
+            
+            # Disable focus navigation in viewer if it exists
+            if self.viewer_3d is not None:
+                self.viewer_3d.toggle_focus_navigation(False)
+        
+    def toggle_flythrough_navigation(self, checked):
+        """Toggle flythrough navigation mode in 3D view"""
+        if checked:
+            print("TD Widget: Flythrough navigation enabled")
+            
+            # Ensure we're in surface mode first
+            if not self.surface_mode_enabled:
+                from PyQt5.QtWidgets import QPushButton
+                surface_btn = self.main_window.findChild(QPushButton, "td_mode_btn_0")
+                if surface_btn:
+                    surface_btn.setChecked(True)
+                self.toggle_surface_mode(True)
+            
+            # Show flythrough and blood flow controls
+            if self.viewer_3d is not None:
+                self.viewer_3d.walkthrough_controls_group.show()
+                self.viewer_3d.blood_flow_controls_group.show()
+            else:
+                print("TD Widget: No 3D viewer available")
+        else:
+            print("TD Widget: Flythrough navigation disabled")
+            
+            # Hide flythrough and blood flow controls
+            if self.viewer_3d is not None:
+                self.viewer_3d.walkthrough_controls_group.hide()
+                self.viewer_3d.blood_flow_controls_group.hide()
