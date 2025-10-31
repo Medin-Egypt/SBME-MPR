@@ -1,15 +1,19 @@
 # MPR Viewer
-**Multi-Planar Reconstruction Viewer for Medical Imaging**
+**Multi-Planar Reconstruction Viewer for Medical Imaging**                           
 # Overview
+**MPR (Multi-Planar Reconstruction) Viewer** is a comprehensive medical imaging application built with **PyQt5** that enables visualization and manipulation of **3D medical imaging data**.                                                              
 
-**MPR (Multi-Planar Reconstruction) Viewer** is a comprehensive medical imaging application built with **PyQt5** that enables visualization and manipulation of **3D medical imaging data**.
+The application supports both **NIfTI** and **DICOM** file formats, offering advanced viewing capabilities including:                                
 
-The application supports both **NIfTI** and **DICOM** file formats, offering advanced viewing capabilities including:
-
-* Multi-planar reconstruction (MPR)
-* Segmentation overlay
-* Oblique slicing
-* AI-powered orientation detection
+* Multi-planar reconstruction (MPR)                        
+* Segmentation overlay with memory-efficient management                     
+* Oblique slicing with interactive rotation                    
+* Curved MPR for vessel analysis                   
+* AI-powered orientation detection                   
+* Advanced 3D visualization with PyVista                       
+* Interactive blood flow simulation                     
+* Vessel flythrough navigation                  
+* Theme switching (Dark/Light modes)                                     
 
  ![](https://github.com/MhmdSheref/CUFE-MPR/blob/10a433384a0e6b7e8cadd6f265bdb146c25e09e1/assets/Overview.png)
 <div align="center">
@@ -26,19 +30,31 @@ This tool is designed for **medical professionals, researchers, and students** w
 **Export Capabilities:** Export processed volumes to both **NIfTI** and **DICOM** formats with full metadata preservation         
 
 
-* **Viewing Modes**
+**Viewing Modes**                              
 
-**3 Main Views:** Simultaneous axial, coronal, and sagittal plane visualization                
+**2D MPR Views:**                        
 
-**Oblique View:** Custom oblique plane slicing with interactive rotation controls                
+* **3 Main Views:** Simultaneous axial, coronal, and sagittal plane visualization                
 
-**Segmentation View:** Overlay and visualize segmentation masks with edge detection                    
+* **Oblique View:** Custom oblique plane slicing with interactive rotation controls                
+
+* **Segmentation View:** Dedicated view for segmentation visualization with plane selection
+  
+* **Curved View:** Advanced curved MPR for vessel straightening and analysis
+
+**3D Visualization:**
+  
+* **Surface Mode:** High-quality 3D surface rendering of segmented structures
+  
+* **Planes Mode:** Interactive slice planes in 3D space
+  
+* **atomical System Organization:** Structures automatically categorized by system (Cardiovascular, Skeletal, Muscular, etc.)
+  
+* **Smart Caching:** Mesh and volume caching for faster repeated loads                                                                       
 
 
- * **Interactive Tools**
-
+**Interactive Tools**
 <div align="center">
-
 <table>
 <tr>
 <td align="center" width="33%">
@@ -74,21 +90,51 @@ This tool is designed for **medical professionals, researchers, and students** w
 <sub>Automated slice-by-slice playback for dynamic viewing</sub>
 </td>
 </tr>
+<tr>
+<td align="center" width="33%">
+<img src="assets/icon7.png" width="60"/><br/>
+<b>Curved MPR Tool</b><br/>
+<sub>Draw curves on vessels for straightened visualization</sub>
+</td>
+<td align="center" width="33%">
+<img src="assets/icon8.png" width="60"/><br/>
+<b>Flythrough Navigation</b><br/>
+<sub>Camera flythrough along vessel centerlines</sub>
+</td>
+<td align="center" width="33%">
+<img src="assets/icon9.png" width="60"/><br/>
+<b>Focus Navigation</b><br/>
+<sub>Right-click to isolate and focus on specific structures</sub>
+</td>
+</tr>
 </table>
-
 </div>
 
-* **Advanced Features**
-
-**Segmentation Overlay**: Load multiple segmentation files with edge detection and red outline visualization
-  
- **Aspect Ratio Correction**: Automatic voxel spacing-based aspect ratio correction for accurate anatomical representation
+**Advanced Features**                  
  
- **AI Orientation Detection**: TensorFlow-based model for automatic anatomical orientation classification
-  
- **Coordinated Zoom**: Uniform scaling across all views maintaining spatial relationships
-  
- **Custom Title Bar**: Modern, frameless window design with drag, minimize, maximize, and restore functionality     
+**Segmentation Management:**                                                               
+
+* Load multiple segmentation files with memory-efficient lazy loading              
+* Edge detection with red outline visualization                 
+* Merged volume view for comprehensive segmentation analysis               
+* Smart caching for improved performance                 
+ 
+**3D Advanced Features:**         
+
+* Blood Flow Visualization: Animated blood flow simulation in vessels with adjustable heart rate                 
+* Vessel Centerline Extraction: Automatic centerline computation for tubular structures           
+* Flythrough Navigation: Interactive camera paths through vessels and spinal canal         
+* Focus Navigation: Right-click to isolate and examine individual structures             
+* Anatomical Categorization: Automatic organization by body systems               
+* Opacity Control: Per-system opacity adjustment               
+
+**UI/UX Enhancements:**                  
+        
+* Theme Switching: Toggle between dark and light modes with animated switch              
+* Custom Title Bar: Modern, frameless window design with drag, minimize, maximize, and restore             
+* Tabbed Interface: Seamless switching between 2D MPR and 3D views                  
+* Progress Indicators: Background loading with cancellable progress dialogs               
+* Coordinated Zoom: Uniform scaling across all views maintaining spatial relationships                           
 
 # Requirements
 ```
@@ -102,18 +148,23 @@ Click **"Open NIfTI File"** or **"Open DICOM Folder"** to import your medical im
 * Detects orientation (for DICOM files)
 * Calculates optimal window/level settings
 * Applies aspect ratio correction
+* Organizes segmentations by anatomical system
 
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/7394bdc6530d9d705ee93e7f0ee1b7e5331d3209/assets/Overview.png)
 
 
 
 
-**2) Navigate and Explore**
-Use intuitive controls to explore your data:
+**2) Navigate and Explore** 
+
+Use intuitive controls to explore your data:                    
 
 * **Mouse wheel:** Scroll through slices
 * **Click and drag:** Move crosshair to specific locations
 * **Double-click:** Maximize any view for detailed inspection
+* **Tab switching:** Toggle between 2D MPR and 3D views
+
+
 
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/fd047e37bd47328033e9fe22546262ddac866ee8/assets/gif%20converted/Navigation%20tool.gif)
 
@@ -124,7 +175,10 @@ Fine-tune the display for optimal visualization:
 
 * **Contrast Mode:** Drag to adjust window/level
 * **Zoom/Pan Mode:** Wheel to zoom, drag to pan
-* **Reset:** Restore original settings anytime
+* **Reset:** Restore original settings anytime                
+* **Theme Switch:** Toggle between dark and light modes                              
+
+
 
 <div align="center">
 
@@ -150,6 +204,10 @@ Fine-tune the display for optimal visualization:
 * Click "Load Segmentation" to add masks
 * Switch to "Segmentation View" for dedicated visualization
 * Overlays appear as red outlines in all views
+* View merged segmentations in dedicated panel
+* Background loading with progress tracking
+
+Show Image
 
   ![](https://github.com/MhmdSheref/CUFE-MPR/blob/832743130d833ccc8c2c38e6fe9c97585858b586/assets/Segmentaion%20view.png)
 
@@ -164,7 +222,53 @@ Fine-tune the display for optimal visualization:
 
 ![](https://github.com/MhmdSheref/CUFE-MPR/blob/b0622ede04e272644e075070303e5f96be9579c9/assets/gif%20converted/Rotate%20tool.gif)
 
-**6) Crop and Export**
+
+**6) Curved MPR for Vessels**                          
+**Straighten curved vessels for better analysis:**                   
+
+* Switch to "Curved View" mode
+* Enable "Curved MPR" tool                             
+* Left-click: Add control points along vessel                                       
+* Right-click: Remove last point                     
+* Double-click: Confirm curve and generate straightened view                         
+* View frontal projection of curved structure                       
+
+
+**7) 3D Visualization**                                                
+**Explore data in three dimensions:**
+
+* Switch to "3D" tab                  
+* Choose Surface Mode for 3D structure rendering                 
+* Choose Planes Mode for interactive slice visualization                
+* Toggle visibility by anatomical system                  
+* Adjust opacity per system                
+* Use smart loading - structures load on-demand                         
+
+**8) Advanced 3D Features**                       
+**Blood Flow Visualization:**                                     
+
+* Set desired heart rate (BPM)                     
+* Click "Start Blood Flow"                   
+* Watch animated blood flow through vessels                    
+* Pulsatile flow in arteries, steady flow in veins                             
+
+**Vessel Flythrough:**               
+
+* Select a vessel or "Spine" from dropdown
+* Click "Play" to start automatic flythrough
+* Adjust velocity with slider
+* Scrub through path with progress slider
+* Camera follows vessel centerline automatically
+
+**Focus Navigation:**
+
+* Enable "Focus Navigation" tool
+* Right-click on any structure to isolate it
+* Right-click again to restore all structures
+* Perfect for examining specific anatomy
+
+
+**9) Crop and Export**
 **Process and export your data:**
 
 * Click the Crop tool to select slice range
