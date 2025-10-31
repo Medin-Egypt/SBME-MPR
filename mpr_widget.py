@@ -1024,6 +1024,9 @@ class MPRWidget(QWidget):
         # Store the curved view dimensions for proper scaling
         self.pixel_dims['curved'] = (width, height)
         
+        # Flip vertically to correct orientation
+        straightened = np.flipud(straightened)
+        
         print(f"Generated curved MPR frontal view: {width}x{height} pixels from {len(points)} control points")
         return straightened.astype(np.uint8)
 
