@@ -321,7 +321,7 @@ class TDWidget(QWidget):
         """Toggle flythrough navigation mode in 3D view"""
         if checked:
             print("TD Widget: Flythrough navigation enabled")
-            
+
             # Ensure we're in surface mode first
             if not self.surface_mode_enabled:
                 from PyQt5.QtWidgets import QPushButton
@@ -329,17 +329,19 @@ class TDWidget(QWidget):
                 if surface_btn:
                     surface_btn.setChecked(True)
                 self.toggle_surface_mode(True)
-            
-            # Show flythrough and blood flow controls
+
+            # Show flythrough and blood flow controls, hide transparency controls
             if self.viewer_3d is not None:
                 self.viewer_3d.walkthrough_controls_group.show()
                 self.viewer_3d.blood_flow_controls_group.show()
+                self.viewer_3d.systems_scroll_area.hide()
             else:
                 print("TD Widget: No 3D viewer available")
         else:
             print("TD Widget: Flythrough navigation disabled")
-            
-            # Hide flythrough and blood flow controls
+
+            # Hide flythrough and blood flow controls, show transparency controls
             if self.viewer_3d is not None:
                 self.viewer_3d.walkthrough_controls_group.hide()
                 self.viewer_3d.blood_flow_controls_group.hide()
+                self.viewer_3d.systems_scroll_area.show()

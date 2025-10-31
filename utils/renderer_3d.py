@@ -556,7 +556,7 @@ class SegmentationViewer3D(QWidget):
         self.walkthrough_timer.timeout.connect(self._update_walkthrough)
         self.camera_path = []  # List of camera positions along centerline
         self.current_path_index = 0
-        self.walkthrough_speed = 50  # milliseconds per step
+        self.walkthrough_velocity = 20  # steps per second (velocity)
         self.centerline_mesh_name = None  # Name of mesh being walked through
         self.centerline_actor = None  # Actor for visualizing centerline
         self.centerline_points = None  # Stored centerline points for recomputing camera path
@@ -748,25 +748,25 @@ class SegmentationViewer3D(QWidget):
         self.stop_btn.setEnabled(False)
         layout.addWidget(self.stop_btn)
 
-        # Speed control
-        speed_layout = QVBoxLayout()
-        speed_label = QLabel("Speed:")
-        speed_layout.addWidget(speed_label)
+        # Velocity control
+        velocity_layout = QVBoxLayout()
+        velocity_label = QLabel("Velocity:")
+        velocity_layout.addWidget(velocity_label)
 
-        speed_slider_layout = QHBoxLayout()
+        velocity_slider_layout = QHBoxLayout()
         self.speed_slider = QSlider(Qt.Horizontal)
-        self.speed_slider.setMinimum(10)
-        self.speed_slider.setMaximum(200)
-        self.speed_slider.setValue(50)
+        self.speed_slider.setMinimum(5)
+        self.speed_slider.setMaximum(50)
+        self.speed_slider.setValue(20)
         self.speed_slider.valueChanged.connect(self._on_speed_changed)
 
-        self.speed_value_label = QLabel("50 ms")
+        self.speed_value_label = QLabel("20 u/s")
         self.speed_value_label.setMinimumWidth(60)
 
-        speed_slider_layout.addWidget(self.speed_slider)
-        speed_slider_layout.addWidget(self.speed_value_label)
-        speed_layout.addLayout(speed_slider_layout)
-        layout.addLayout(speed_layout)
+        velocity_slider_layout.addWidget(self.speed_slider)
+        velocity_slider_layout.addWidget(self.speed_value_label)
+        velocity_layout.addLayout(velocity_slider_layout)
+        layout.addLayout(velocity_layout)
 
         # Progress slider
         progress_layout = QVBoxLayout()
@@ -822,7 +822,7 @@ class SegmentationViewer3D(QWidget):
         layout.addWidget(self.blood_flow_btn)
 
         # Info label
-        info_label = QLabel("Visualizes blood flow with\nanimated rings in vessels")
+        info_label = QLabel("Visualizes blood flow with\nanimated cylinders in vessels")
         info_label.setStyleSheet("color: #888; font-size: 10px;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -1724,11 +1724,20 @@ class SegmentationViewer3D(QWidget):
             'pulmonary_artery',
             'pulmonary_vein',
             'portal',
-            'splenic'
+            'splenic',
+            'vertebra',
+            'vertebrae',
+            'spine'
         ]
 
         # Check if mesh name contains any flythrough-compatible keywords
         return any(keyword in name_lower for keyword in flythrough_keywords)
+
+    def _is_vertebra(self, mesh_name):
+        """Check if a mesh is a vertebra"""
+        name_lower = mesh_name.lower()
+        vertebra_keywords = ['vertebra', 'vertebrae', 'cervical', 'thoracic', 'lumbar', 'sacral']
+        return any(keyword in name_lower for keyword in vertebra_keywords)
 
     def _update_mesh_selector(self):
         """Update the mesh selector dropdown with loaded meshes (filtered for fly-through compatibility)"""
@@ -1737,9 +1746,18 @@ class SegmentationViewer3D(QWidget):
 
         # Only add meshes that are compatible with fly-through
         compatible_meshes = []
+        vertebrae_meshes = []
+
         for mesh_name in sorted(self.actors.keys()):
             if self._is_flythrough_compatible(mesh_name):
                 compatible_meshes.append(mesh_name)
+                if self._is_vertebra(mesh_name):
+                    vertebrae_meshes.append(mesh_name)
+
+        # If there are multiple vertebrae, add a special "Spine" option
+        if len(vertebrae_meshes) > 1:
+            self.mesh_selector.addItem("🦴 Spine (all vertebrae)", "__SPINE_ALL__")
+            print(f"Added spine option with {len(vertebrae_meshes)} vertebrae")
 
         # Add compatible meshes to selector
         for mesh_name in compatible_meshes:
@@ -1773,9 +1791,129 @@ class SegmentationViewer3D(QWidget):
             self.play_pause_btn.setEnabled(False)
             self.stop_btn.setEnabled(False)
 
+    def _compute_spine_centerline(self):
+        """Compute centerline through spinal canal (the hole where spinal cord goes)"""
+        print("Computing centerline through spinal canal...")
+        self.play_pause_btn.setEnabled(False)
+        self.play_pause_btn.setText("Computing...")
+        QCoreApplication.processEvents()
+
+        try:
+            # Collect center points of each vertebra (approximates spinal canal)
+            vertebra_centers = []
+            vertebrae_info = []
+
+            for mesh_name, actor in self.actors.items():
+                if self._is_vertebra(mesh_name):
+                    mapper = actor.GetMapper()
+                    mesh = mapper.GetInput()
+                    pv_mesh = pv.wrap(mesh)
+
+                    # Get the center of the vertebra
+                    # For vertebrae, the spinal canal is approximately at the center
+                    center = pv_mesh.center
+
+                    vertebra_centers.append(center)
+                    vertebrae_info.append({
+                        'name': mesh_name,
+                        'center': center,
+                        'mesh': pv_mesh
+                    })
+
+            if len(vertebra_centers) < 2:
+                print("Not enough vertebrae meshes found")
+                self.play_pause_btn.setText("▶ Play")
+                self.play_pause_btn.setEnabled(True)
+                return False
+
+            print(f"Found {len(vertebra_centers)} vertebrae for spine flythrough")
+
+            # Convert to numpy array for easier manipulation
+            vertebra_centers = np.array(vertebra_centers)
+
+            # Sort vertebrae by Z coordinate (superior to inferior)
+            # In medical imaging, higher Z typically means more superior (toward head)
+            z_coords = vertebra_centers[:, 2]
+            sorted_indices = np.argsort(z_coords)[::-1]  # Descending order (head to feet)
+
+            # Reorder centers from head to feet
+            centerline_points = vertebra_centers[sorted_indices]
+
+            sorted_names = [vertebrae_info[i]['name'] for i in sorted_indices]
+            print(f"Spine order (head→feet): {' → '.join(sorted_names)}")
+
+            # Smooth the path through spinal canal
+            # Use gentle smoothing to avoid going outside the canal
+            if len(centerline_points) > 3:
+                from scipy.ndimage import gaussian_filter1d
+                smoothed_points = centerline_points.copy()
+                for dim in range(3):
+                    # Light smoothing to reduce shake while staying in canal
+                    smoothed_points[:, dim] = gaussian_filter1d(centerline_points[:, dim], sigma=1.0)
+                centerline_points = smoothed_points
+                print("Applied smooth path through spinal canal")
+
+            # Interpolate additional points between vertebrae for smoother camera motion
+            # This creates more camera positions without changing the path
+            interpolated_points = []
+            for i in range(len(centerline_points) - 1):
+                start = centerline_points[i]
+                end = centerline_points[i + 1]
+                # Add 10 interpolated points between each pair of vertebrae
+                for t in np.linspace(0, 1, 10, endpoint=False):
+                    interpolated_points.append(start + t * (end - start))
+            # Add the final point
+            interpolated_points.append(centerline_points[-1])
+
+            centerline_points = np.array(interpolated_points)
+            print(f"Interpolated to {len(centerline_points)} points for smooth motion")
+
+            # Store centerline points for recomputing camera path
+            self.centerline_points = centerline_points
+
+            # Visualize centerline (currently hidden)
+            self._visualize_centerline(centerline_points)
+
+            # Set initial look-ahead distance based on path length
+            initial_lookahead = max(5, len(centerline_points) // 20)
+            self.look_ahead_distance = initial_lookahead
+
+            # Compute camera positions along centerline
+            self._recompute_camera_path()
+
+            print(f"Computed spine camera path with {len(self.camera_path)} positions")
+
+            # Enable playback controls
+            self.play_pause_btn.setEnabled(True)
+            self.stop_btn.setEnabled(True)
+            self.progress_slider.setEnabled(True)
+            self.progress_slider.setMaximum(max(1, len(self.camera_path) - 1))
+
+            # Reset progress
+            self.current_path_index = 0
+            self._update_progress_display()
+
+            return True
+
+        except Exception as e:
+            print(f"Error computing spine centerline: {e}")
+            import traceback
+            traceback.print_exc()
+            self.play_pause_btn.setText("▶ Play")
+            self.play_pause_btn.setEnabled(True)
+            return False
+
     def _compute_centerline(self):
-        """Compute the centerline for the selected mesh"""
-        if not self.centerline_mesh_name or self.centerline_mesh_name not in self.actors:
+        """Compute the centerline for the selected mesh (or combined spine)"""
+        if not self.centerline_mesh_name:
+            print("No valid mesh selected")
+            return False
+
+        # Special handling for spine (all vertebrae)
+        if self.centerline_mesh_name == "__SPINE_ALL__":
+            return self._compute_spine_centerline()
+
+        if self.centerline_mesh_name not in self.actors:
             print("No valid mesh selected")
             return False
 
@@ -1801,6 +1939,12 @@ class SegmentationViewer3D(QWidget):
                 self.play_pause_btn.setText("▶ Play")
                 self.play_pause_btn.setEnabled(True)
                 return False
+
+            # For arteries, reverse the centerline so flythrough goes from heart to extremities
+            # (PCA ordering typically goes from extremities to heart)
+            if self._is_artery(self.centerline_mesh_name):
+                centerline_points = centerline_points[::-1]
+                print(f"↻ Reversed flythrough direction for artery")
 
             # Store centerline points for recomputing camera path
             self.centerline_points = centerline_points
@@ -1872,8 +2016,9 @@ class SegmentationViewer3D(QWidget):
             self.play_pause_btn.setText("▶ Play")
             print("Flythrough paused")
         else:
-            # Play
-            self.walkthrough_timer.start(self.walkthrough_speed)
+            # Play (convert velocity to timer interval in milliseconds)
+            interval_ms = int(1000 / self.walkthrough_velocity)
+            self.walkthrough_timer.start(interval_ms)
             self.walkthrough_active = True
             self.play_pause_btn.setText("⏸ Pause")
             print("Flythrough started")
@@ -1892,13 +2037,14 @@ class SegmentationViewer3D(QWidget):
         print("Flythrough stopped")
 
     def _on_speed_changed(self, value):
-        """Handle speed slider changes"""
-        self.walkthrough_speed = value
-        self.speed_value_label.setText(f"{value} ms")
+        """Handle velocity slider changes"""
+        self.walkthrough_velocity = value
+        self.speed_value_label.setText(f"{value} u/s")
 
-        # Update timer if active
+        # Update timer if active (convert velocity to interval in milliseconds)
         if self.walkthrough_active:
-            self.walkthrough_timer.setInterval(self.walkthrough_speed)
+            interval_ms = int(1000 / self.walkthrough_velocity)
+            self.walkthrough_timer.setInterval(interval_ms)
 
     def _recompute_camera_path(self):
         """Recompute camera path from stored centerline points"""
@@ -2054,6 +2200,12 @@ class SegmentationViewer3D(QWidget):
 
     def _on_centerline_computed(self, mesh_name, centerline_points, radius):
         """Handle computed centerline result"""
+        # For arteries, reverse the centerline so blood flows from heart to extremities
+        # (PCA ordering typically goes from extremities to heart)
+        if self._is_artery(mesh_name):
+            centerline_points = centerline_points[::-1]
+            print(f"  ↻ Reversed centerline direction for artery: {mesh_name}")
+
         # Store centerline and radius
         self.vessel_centerlines[mesh_name] = centerline_points
         self.vessel_radii[mesh_name] = radius
@@ -2150,7 +2302,7 @@ class SegmentationViewer3D(QWidget):
 
     def _create_ring_mesh_for_vessel(self, vessel_radius):
         """
-        Create a ring mesh for a specific vessel radius.
+        Create a filled cylinder (disk) mesh for a specific vessel radius.
 
         Parameters:
         -----------
@@ -2160,29 +2312,34 @@ class SegmentationViewer3D(QWidget):
         Returns:
         --------
         mesh : pv.PolyData
-            Ring mesh with appropriate size
+            Filled cylinder mesh with appropriate size
         """
         # Create circle points in XY plane with vessel-specific radius
-        theta = np.linspace(0, 2*np.pi, 16, endpoint=False)
+        n_points = 32  # More points for smoother circle
+        theta = np.linspace(0, 2*np.pi, n_points, endpoint=False)
 
         circle_x = vessel_radius * np.cos(theta)
         circle_y = vessel_radius * np.sin(theta)
         circle_z = np.zeros_like(theta)
 
+        # Create points array with center point first
+        center_point = np.array([[0, 0, 0]])
         circle_points = np.column_stack([circle_x, circle_y, circle_z])
+        all_points = np.vstack([center_point, circle_points])
 
-        # Create polyline
-        lines = np.full((len(theta), 3), 2, dtype=np.int32)
-        lines[:, 1] = np.arange(len(theta))
-        lines[:, 2] = np.roll(np.arange(len(theta)), -1)
+        # Create triangular faces connecting center to circle
+        faces = []
+        for i in range(n_points):
+            next_i = (i + 1) % n_points
+            # Triangle: center (index 0), current point (index i+1), next point (index next_i+1)
+            faces.append([3, 0, i + 1, next_i + 1])
 
-        poly = pv.PolyData(circle_points, lines=lines)
+        faces = np.hstack(faces)
 
-        # Apply tube filter with radius proportional to vessel size
-        tube_radius = max(0.3, vessel_radius * 0.15)  # 15% of vessel radius
-        tube = poly.tube(radius=tube_radius, n_sides=6)
+        # Create filled cylinder mesh
+        cylinder = pv.PolyData(all_points, faces=faces)
 
-        return tube
+        return cylinder
 
     def _create_flow_rings(self, mesh_name, vessel_actor):
         """

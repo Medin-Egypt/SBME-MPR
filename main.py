@@ -759,9 +759,8 @@ class MPRViewer(QMainWindow):
             self.mpr_widget.curved_mpr_points_3d = []
             self.mpr_widget.curve_confirmed = False
             for label in self.mpr_widget.view_labels.values():
-                if isinstance(label, SliceViewLabel):
-                    label.curved_mpr_mode = False
-                    label.curve_points = []
+                label.curved_mpr_mode = False
+                label.curve_points = []
         
         if btn_name == "tool_btn_0_0":
             self.mpr_widget.reset_crosshair_and_slices()
