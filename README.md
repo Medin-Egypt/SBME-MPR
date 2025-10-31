@@ -243,8 +243,9 @@ Show Image
 * Toggle visibility by anatomical system                  
 * Adjust opacity per system                
 * Use smart loading - structures load on-demand                         
+ 
+**8) Advanced 3D Features**  
 
-**8) Advanced 3D Features**                       
 **Blood Flow Visualization:**                                     
 
 * Set desired heart rate (BPM)                     
