@@ -334,7 +334,8 @@ class TDWidget(QWidget):
             if self.viewer_3d is not None:
                 self.viewer_3d.walkthrough_controls_group.show()
                 self.viewer_3d.blood_flow_controls_group.show()
-                self.viewer_3d.systems_scroll_area.hide()
+                if self.viewer_3d.systems_scroll_area is not None:
+                    self.viewer_3d.systems_scroll_area.hide()
             else:
                 print("TD Widget: No 3D viewer available")
         else:
@@ -344,4 +345,5 @@ class TDWidget(QWidget):
             if self.viewer_3d is not None:
                 self.viewer_3d.walkthrough_controls_group.hide()
                 self.viewer_3d.blood_flow_controls_group.hide()
-                self.viewer_3d.systems_scroll_area.show()
+                if self.viewer_3d.systems_scroll_area is not None:
+                    self.viewer_3d.systems_scroll_area.show()

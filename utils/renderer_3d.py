@@ -603,17 +603,11 @@ class SegmentationViewer3D(QWidget):
         controls_layout = QVBoxLayout(controls_container)
         controls_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Title
-        title_label = QLabel("Anatomical Systems" if self.systems else "3D Controls")
-        # This objectName is the hook for the QSS file
-        title_label.setObjectName("anatomical_systems_title")
-        controls_layout.addWidget(title_label)
-        self.controls_title_label = title_label
-
-        # Slice controls group (for planes mode)
+        # Slice controls group (for planes mode) - ADD AT TOP
         self.slice_controls_group = self.create_slice_controls()
-        controls_layout.addWidget(self.slice_controls_group)
+        controls_layout.addWidget(self.slice_controls_group, 0)  # Add with stretch factor 0
         self.slice_controls_group.hide()  # Initially hidden
+        self.systems_scroll_area = None
 
         # Flythrough controls group
         self.walkthrough_controls_group = self.create_walkthrough_controls()
@@ -649,20 +643,22 @@ class SegmentationViewer3D(QWidget):
 
         scroll_layout.addStretch()
         scroll.setWidget(scroll_content)
-        controls_layout.addWidget(scroll)
+        controls_layout.addWidget(scroll, 1)  # Add with stretch factor 1 to take remaining space
         self.systems_scroll_area = scroll
+        controls_layout.addStretch()  # Push reset button to bottom
 
         # Reset all button
         reset_btn = QPushButton("Reset View")
         # Removed inline QSS
         reset_btn.clicked.connect(self.reset_camera)
-        controls_layout.addWidget(reset_btn)
+        controls_layout.addWidget(reset_btn, 0)  # Add with stretch factor 0 to stay at bottom
 
         return controls_container
 
     def create_slice_controls(self):
         """Create slice control sliders for planes mode"""
         group = QGroupBox("Slice Controls")
+        group.setMaximumHeight(350)
         # Removed inline QSS
 
         layout = QVBoxLayout()
@@ -1555,12 +1551,22 @@ class SegmentationViewer3D(QWidget):
             # Hide all segmentation actors
             for actor in self.actors.values():
                 actor.SetVisibility(False)
+            
             # Show planes
             self.create_planes()
-            # Update UI to show slice controls
-            self.controls_title_label.setText("Plane Controls")
+            
+            # Update UI to show slice controls at top, hide everything else
             self.slice_controls_group.show()
-            self.systems_scroll_area.hide()
+            self.walkthrough_controls_group.hide()
+            self.blood_flow_controls_group.hide()
+            if self.systems_scroll_area:
+                self.systems_scroll_area.hide()
+            
+            # Stop any active flythrough or blood flow
+            if self.walkthrough_active:
+                self._stop_walkthrough()
+            if self.blood_flow_active:
+                self._stop_blood_flow()
 
         else:
             # Show segmentation actors that were visible
@@ -1572,12 +1578,16 @@ class SegmentationViewer3D(QWidget):
                         if nifti_file in files and self.system_visible.get(system_name, True):
                             self.actors[filename].SetVisibility(True)
                             break
+            
             # Hide planes
             self.remove_planes()
+            
             # Update UI to show system controls
-            self.controls_title_label.setText("Anatomical Systems")
             self.slice_controls_group.hide()
-            self.systems_scroll_area.show()
+            # Don't automatically show walkthrough/blood flow controls
+            # They should only show when flythrough tool is active
+            if self.systems_scroll_area:
+                self.systems_scroll_area.show()
 
         self.plotter.render()
 
