@@ -15,7 +15,7 @@ The application supports both **NIfTI** and **DICOM** file formats, offering adv
 * Vessel flythrough navigation                  
 * Theme switching (Dark/Light modes)                                     
 
- ![](https://github.com/MhmdSheref/CUFE-MPR/blob/10a433384a0e6b7e8cadd6f265bdb146c25e09e1/assets/Overview.png)
+ ![](https://github.com/Medin-Egypt/SBME-MPR/blob/e8d6dd1334719758716d2ccff2d066d229e1718d/assets/Overview.png)
 <div align="center">
 </div>
 
@@ -192,6 +192,10 @@ Fine-tune the display for optimal visualization:
         <img src="assets/gif converted/Zoom tool.gif" width="420"/><br>
         <b>Zoom/Pan Mode</b>
       </td>
+      <td align="center">
+        <img src="assets/gif converted/switchthemes.gif" width="420"/><br>
+        <b>Switch Themes</b>
+      </td>
     </tr>
   </table>
 
@@ -233,6 +237,7 @@ Show Image
 * Double-click: Confirm curve and generate straightened view                         
 * View frontal projection of curved structure                       
 
+![](https://github.com/Medin-Egypt/SBME-MPR/blob/e8d6dd1334719758716d2ccff2d066d229e1718d/assets/CurvedMPR%20view.png)
 
 **7) 3D Visualization**                                                
 **Explore data in three dimensions:**
@@ -243,6 +248,8 @@ Show Image
 * Toggle visibility by anatomical system                  
 * Adjust opacity per system                
 * Use smart loading - structures load on-demand                         
+
+![](https://github.com/Medin-Egypt/SBME-MPR/blob/e8d6dd1334719758716d2ccff2d066d229e1718d/assets/3Dvis.png)
  
 **8) Advanced 3D Features**  
 
@@ -253,6 +260,8 @@ Show Image
 * Watch animated blood flow through vessels                    
 * Pulsatile flow in arteries, steady flow in veins                             
 
+![](https://github.com/Medin-Egypt/SBME-MPR/blob/21d4fbf573044b48efb3c04d4e56cf3ee6622075/assets/gif%20converted/bloodflow.gif)
+
 **Vessel Flythrough:**               
 
 * Select a vessel or "Spine" from dropdown
@@ -261,12 +270,17 @@ Show Image
 * Scrub through path with progress slider
 * Camera follows vessel centerline automatically
 
+![](https://github.com/Medin-Egypt/SBME-MPR/blob/21d4fbf573044b48efb3c04d4e56cf3ee6622075/assets/gif%20converted/flythrough.gif)
+
+
 **Focus Navigation:**
 
 * Enable "Focus Navigation" tool
 * Right-click on any structure to isolate it
 * Right-click again to restore all structures
 * Perfect for examining specific anatomy
+
+![](https://github.com/Medin-Egypt/SBME-MPR/blob/21d4fbf573044b48efb3c04d4e56cf3ee6622075/assets/gif%20converted/focusnav.gif)
 
 
 **9) Crop and Export**
